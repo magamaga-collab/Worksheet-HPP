@@ -612,7 +612,7 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 
             for row in ws_piv.iter_rows(min_row=3):
                 for cell in row:
-                    if cell.column >= 2 and cell.value is not None and not (cell.column == 2 and row.row > hdr_p2):
+                    if cell.column >= 2 and cell.value is not None and not (cell.column == 2 and cell.row > hdr_p2):
                         cell.number_format = ACC_FORMAT
                         
             output = BytesIO()
