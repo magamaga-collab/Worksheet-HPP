@@ -600,3 +600,7 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             st.success("✅ Proses selesai! Seluruh rumus aktif, sheet Ref_Klasifikasi, dan format Accounting telah diterapkan.")
             st.download_button(
                 label="📥 Download File Excel HPP Lengkap (Rumus Aktif & Accounting)",
+                data=output,
+                file_name="HPP_Update_Oktober_2026.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
