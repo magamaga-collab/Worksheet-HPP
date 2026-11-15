@@ -123,14 +123,14 @@ def parse_gl_files(gl_files):
         split_pairs = [split_account_code_desc(x) for x in cleaned_accs]
         
         df_valid['Account'] = cleaned_accs
-        df_valid['Account_Code'] = [p[0] for p in split_pairs]
-        df_valid['Account_Desc'] = [p[1] for p in split_pairs]
+        df_valid['Account_Code'] = [pair[0] for pair in split_pairs]
+        df_valid['GL_Account_Desc'] = [pair[1] for pair in split_pairs]
         df_valid['Tags_Calc'] = df_valid['Debit'] - df_valid['Credit']
         
         all_tx.append(df_valid)
         
         if not df_valid.empty:
-            grp = df_valid.groupby(['Account_Code', 'Account_Desc'], as_index=False).agg(
+            grp = df_valid.groupby(['Account_Code', 'GL_Account_Desc'], as_index=False).agg(
                 GL_Debit=('Debit', 'sum'),
                 GL_Credit=('Credit', 'sum'),
                 GL_Net_Mutasi=('Tags_Calc', 'sum')
@@ -140,34 +140,34 @@ def parse_gl_files(gl_files):
     df_gl_all = pd.concat(all_tx, ignore_index=True) if all_tx else pd.DataFrame()
     df_gl_sum = pd.concat(gl_summary_list, ignore_index=True) if gl_summary_list else pd.DataFrame()
     if not df_gl_sum.empty:
-        df_gl_sum = df_gl_sum.groupby(['Account_Code', 'Account_Desc'], as_index=False).sum()
+        df_gl_sum = df_gl_sum.groupby(['Account_Code', 'GL_Account_Desc'], as_index=False).sum()
         
     return df_gl_all, df_gl_sum
 
 def parse_tb_file(tb_file):
-    """Membaca Kolom A (index 0) dari file TB yang diawali 5 digit kode akun dan mengambil Debit & Credit Bulan Berjalan"""
+    """Membaca Kolom A dari file TB yang diawali 5 digit kode akun dan mengambil Debit & Credit Bulan Berjalan"""
     df_raw = pd.read_excel(tb_file, header=None)
     
-    # Cari kolom 'Bulan Berjalan' atau nama bulan di baris header atas (misal Oct 2026)
+    # Cari posisi kolom Bulan Berjalan (misal 'Oct 2026' di baris 0 kolom D / indeks 3)
     bb_col_idx = None
-    for r_idx in range(min(6, len(df_raw))):
-        for c_idx, val in enumerate(df_raw.iloc[r_idx]):
+    for r_idx in range(min(5, len(df_raw))):
+        for c_idx in range(1, len(df_raw.columns)):
+            val = df_raw.iat[r_idx, c_idx]
             if pd.notna(val):
                 val_low = str(val).lower()
                 if any(k in val_low for k in ['bulan berjalan', 'jan', 'feb', 'mar', 'apr', 'mei', 'may', 'jun', 'jul', 'agu', 'aug', 'sep', 'okt', 'oct', 'nov', 'des', 'dec']):
-                    if c_idx >= 1:
-                        bb_col_idx = c_idx
-                        break
+                    bb_col_idx = c_idx
+                    break
         if bb_col_idx is not None:
             break
             
-    # Default standar TB: Kolom A (0) = Akun, Kolom B-C (1-2) = Initial, Kolom D-E (3-4) = Bulan Berjalan
+    # Default struktur TB: Kolom A (0)=Akun, B-C (1-2)=Initial, D-E (3-4)=Bulan Berjalan
     if bb_col_idx is None:
         bb_col_idx = 3
         
     tb_records = []
-    for _, row in df_raw.iterrows():
-        acc_val = row.iloc[0]
+    for r_idx in range(len(df_raw)):
+        acc_val = df_raw.iat[r_idx, 0]
         if pd.isna(acc_val):
             continue
         acc_str = str(acc_val).strip()
@@ -180,8 +180,11 @@ def parse_tb_file(tb_file):
         acc_code = match_5digit.group(1).strip()
         acc_desc = match_5digit.group(2).strip()
         
-        debit_bb = pd.to_numeric(row.iloc[bb_col_idx], errors='coerce') if len(row) > bb_col_idx else 0.0
-        credit_bb = pd.to_numeric(row.iloc[bb_col_idx + 1], errors='coerce') if len(row) > bb_col_idx + 1 else 0.0
+        debit_raw = df_raw.iat[r_idx, bb_col_idx] if len(df_raw.columns) > bb_col_idx else 0.0
+        credit_raw = df_raw.iat[r_idx, bb_col_idx + 1] if len(df_raw.columns) > bb_col_idx + 1 else 0.0
+        
+        debit_bb = pd.to_numeric(debit_raw, errors='coerce')
+        credit_bb = pd.to_numeric(credit_raw, errors='coerce')
         debit_bb = 0.0 if pd.isna(debit_bb) else float(debit_bb)
         credit_bb = 0.0 if pd.isna(credit_bb) else float(credit_bb)
         
@@ -226,7 +229,7 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             df_check['Status'] = np.where(is_balanced, 'BALANCE', 'SELISIH')
             
             ordered_cols = [
-                'Account_Code', 'Account_Desc', 'TB_Account_Desc',
+                'Account_Code', 'GL_Account_Desc', 'TB_Account_Desc',
                 'GL_Debit', 'TB_Debit_Berjalan', 'Selisih_Debit',
                 'GL_Credit', 'TB_Credit_Berjalan', 'Selisih_Credit',
                 'GL_Net_Mutasi', 'TB_Net_Mutasi', 'Selisih_Net',
