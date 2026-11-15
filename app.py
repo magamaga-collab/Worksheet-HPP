@@ -40,7 +40,6 @@ def sanitize_excel_str(val):
         return ""
     return ILLEGAL_CHARS_RE.sub("", str(val)).strip()
 
-
 def clean_account_name(val):
     """Membersihkan nama akun dan menghapus akhiran jumlah baris seperti (331)"""
     s = sanitize_excel_str(val)
@@ -62,6 +61,22 @@ def split_account_code_desc(acc_str):
 def extract_account_code(acc_str):
     code, _ = split_account_code_desc(acc_str)
     return code
+def parse_pct_value(val):
+    """Mengonversi nilai persentase (angka maupun teks '25%') menjadi desimal murni 0.25"""
+    if pd.isna(val) or val is None:
+        return 0.0
+    if isinstance(val, str):
+        s = val.strip().replace('%', '').replace(',', '.')
+        try:
+            num = float(s)
+            return num / 100.0 if '%' in val else num
+        except:
+            return 0.0
+    try:
+        return float(val)
+    except:
+        return 0.0
+
 def load_klasifikasi(file):
     """Membaca file klasifikasi untuk mapping & koordinat sel referensi di Excel"""
     df_raw = pd.read_excel(file, header=None)
@@ -82,11 +97,7 @@ def load_klasifikasi(file):
         for _, r in df_k.dropna(subset=['Nama Project']).iterrows():
             p_name = sanitize_excel_str(r['Nama Project'])
             k_proj = r.get('Klasifikasi Project New', r.get('Klasifikasi Project', ''))
-            pct_val = r.get('Percentage 2026', r.get('Percentage', 0))
-            try:
-                pct_val = float(pct_val) if pd.notna(pct_val) else 0.0
-            except:
-                pct_val = 0.0
+            pct_val = parse_pct_value(r.get('Percentage 2026', r.get('Percentage', 0)))
             proj_map[p_name] = sanitize_excel_str(k_proj)
             pct_map[p_name] = pct_val
 
@@ -214,7 +225,7 @@ with col2:
 
 if master_file and klasifikasi_file and tb_file and gl_files:
     if st.button("🚀 Proses & Rekonsiliasi Data", type="primary"):
-        with st.spinner("Sedang memproses file Master, menyertakan Ref_Klasifikasi, dan menghidupkan seluruh rumus..."):
+        with st.spinner("Sedang memproses file Master, menyertakan Ref_Klasifikasi, dan mengaktifkan Pivot Excel..."):
             proj_map, pct_map, acc_map, df_klas_raw = load_klasifikasi(klasifikasi_file)
             df_gl_all, df_gl_sum = parse_gl_files(gl_files)
             df_tb = parse_tb_file(tb_file)
@@ -276,10 +287,16 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             st.dataframe(df_check, use_container_width=True, hide_index=True)
             master_bytes = master_file.getvalue()
             wb_val = openpyxl.load_workbook(BytesIO(master_bytes), data_only=True)
-            ws_val = wb_val[wb_val.sheetnames[0]]
-            
             wb = openpyxl.load_workbook(BytesIO(master_bytes))
+            
+            # Cari sheet utama 'persediaan&HPP' secara akurat
             main_sheet_name = wb.sheetnames[0]
+            for sname in wb.sheetnames:
+                if 'persediaan' in sname.lower() or 'hpp' in sname.lower():
+                    main_sheet_name = sname
+                    break
+                    
+            ws_val = wb_val[main_sheet_name]
             ws_main = wb[main_sheet_name]
             
             if 'Ref_Klasifikasi' in wb.sheetnames:
@@ -311,10 +328,12 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                     elif v == 'klasifikasi lk':
                         ref_klk_col = col_ltr
 
+            # Pastikan kolom persentase di Ref_Klasifikasi berupa angka desimal murni berformat %
             pct_col_num = openpyxl.utils.column_index_from_string(ref_pct_col)
             for r_i in range(ref_start_row, ref_end_row + 1):
                 c_pct = ws_ref.cell(row=r_i, column=pct_col_num)
-                if isinstance(c_pct.value, (int, float)):
+                if c_pct.value is not None:
+                    c_pct.value = parse_pct_value(c_pct.value)
                     c_pct.number_format = '0.00%'
 
             headers = [cell.value for cell in ws_main[1]]
@@ -397,7 +416,7 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                             cell.number_format = 'YYYY-MM-DD'
                         elif col_name in acc_cols_list:
                             cell.number_format = ACC_FORMAT
-                        elif col_name in pct_cols_list:
+                        elif col_name in pct_cols_list or c_idx == 22:
                             cell.number_format = '0.00%'
                             
                 tags_val = float(tx.get('Debit', 0.0)) - float(tx.get('Credit', 0.0))
@@ -415,6 +434,12 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 current_no += 1
                 
             final_data_row = current_row - 1
+            # Pastikan seluruh Kolom V (index 22 / Percentage 2026) berformat % dari baris 2 hingga baris paling bawah
+            for r in range(2, final_data_row + 1):
+                c_v = ws_main.cell(row=r, column=22)
+                if c_v.value is not None:
+                    c_v.number_format = '0.00%'
+
             for col_name, c_idx in col_idx_map.items():
                 if col_name in acc_cols_list:
                     for r in range(2, last_row + 1):
@@ -476,6 +501,21 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 for cell in row:
                     if isinstance(cell.value, (int, float)):
                         cell.number_format = ACC_FORMAT
+            # 1. Perbarui rentang data & aktifkan Auto-Refresh pada seluruh Native Pivot Table bawaan file Master
+            last_col_ltr = get_column_letter(ws_main.max_column)
+            new_source_ref = f"A1:{last_col_ltr}{final_data_row}"
+            for sheet in wb.worksheets:
+                if hasattr(sheet, '_pivots') and sheet._pivots:
+                    for piv in sheet._pivots:
+                        try:
+                            if piv.cache is not None:
+                                piv.cache.refreshOnLoad = True
+                                if piv.cache.cacheSource and piv.cache.cacheSource.worksheetSource:
+                                    piv.cache.cacheSource.worksheetSource.ref = new_source_ref
+                        except Exception:
+                            pass
+
+            # 2. Buat Sheet Pivot_HPP_2026 dengan Rumus SUMIFS & SUM Aktif
             if 'Pivot_HPP_2026' in wb.sheetnames:
                 del wb['Pivot_HPP_2026']
             ws_piv = wb.create_sheet(title='Pivot_HPP_2026')
@@ -572,19 +612,16 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 
             for row in ws_piv.iter_rows(min_row=3):
                 for cell in row:
-                    if cell.column >= 2 and cell.value is not None and not (cell.column == 2 and row[0].row > hdr_p2):
+                    if cell.column >= 2 and cell.value is not None and not (cell.column == 2 and row.row > hdr_p2):
                         cell.number_format = ACC_FORMAT
                         
-            for sheet in wb.worksheets:
-                sheet._pivots = []
-                
             output = BytesIO()
             wb.save(output)
             output.seek(0)
             
-            st.success("✅ Proses selesai! Seluruh rumus aktif, sheet Ref_Klasifikasi, dan format Accounting telah diterapkan.")
+            st.success("✅ Proses selesai! Kolom V sudah berformat %, Native Pivot Table aktif, dan format Accounting telah diterapkan.")
             st.download_button(
-                label="📥 Download File Excel HPP Lengkap (Rumus Aktif & Accounting)",
+                label="📥 Download File Excel HPP Lengkap (Pivot Aktif & Accounting)",
                 data=output,
                 file_name="HPP_Update_Oktober_2026.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
