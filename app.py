@@ -130,8 +130,8 @@ def parse_gl_files(gl_files):
         split_pairs = [split_account_code_desc(x) for x in cleaned_accs]
         
         df_valid['Account'] = cleaned_accs
-        df_valid['Account_Code'] = [pair for pair in split_pairs]
-        df_valid['GL_Account_Desc'] = [pair for pair in split_pairs]
+        df_valid['Account_Code'] = [pair[0] for pair in split_pairs]
+        df_valid['GL_Account_Desc'] = [pair[1] for pair in split_pairs]
         
         df_valid = df_valid[df_valid['Account_Code'] != ""].copy()
         df_valid['Tags_Calc'] = df_valid['Debit'] - df_valid['Credit']
@@ -152,7 +152,6 @@ def parse_gl_files(gl_files):
         df_gl_sum = df_gl_sum.groupby(['Account_Code', 'GL_Account_Desc'], as_index=False).sum()
         
     return df_gl_all, df_gl_sum
-
 def parse_tb_file(tb_file):
     """Membaca Kolom A dari file TB yang diawali 5 digit kode akun dan mengambil Debit & Credit Bulan Berjalan"""
     df_raw = pd.read_excel(tb_file, header=None)
@@ -203,6 +202,7 @@ def parse_tb_file(tb_file):
         })
         
     return pd.DataFrame(tb_records)
+
 col1, col2 = st.columns(2)
 with col1:
     master_file = st.file_uploader("1️⃣ Upload File Master HPP (s.d. September)", type=["xlsx", "xlsm"])
@@ -275,13 +275,12 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             st.dataframe(df_check, use_container_width=True, hide_index=True)
             master_bytes = master_file.getvalue()
             wb_val = openpyxl.load_workbook(BytesIO(master_bytes), data_only=True)
-            ws_val = wb_val[wb_val.sheetnames]
+            ws_val = wb_val[wb_val.sheetnames[0]]
             
             wb = openpyxl.load_workbook(BytesIO(master_bytes))
-            main_sheet_name = wb.sheetnames
+            main_sheet_name = wb.sheetnames[0]
             ws_main = wb[main_sheet_name]
             
-            # 1. Buat / Perbarui Sheet Referensi 'Ref_Klasifikasi' agar semua rumus INDEX-MATCH hidup di dalam file ini
             if 'Ref_Klasifikasi' in wb.sheetnames:
                 del wb['Ref_Klasifikasi']
             ws_ref = wb.create_sheet(title='Ref_Klasifikasi')
@@ -290,7 +289,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 row_vals = [sanitize_excel_str(v) if isinstance(v, str) else (None if pd.isna(v) else v) for v in df_klas_raw.iloc[r_i].tolist()]
                 ws_ref.append(row_vals)
                 
-            # Deteksi koordinat kolom pada sheet Ref_Klasifikasi untuk rumus INDEX-MATCH
             ref_proj_col, ref_kproj_col, ref_pct_col = "B", "C", "D"
             ref_acc_col, ref_klk_col = "F", "G"
             ref_start_row = 2
@@ -312,15 +310,13 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                     elif v == 'klasifikasi lk':
                         ref_klk_col = col_ltr
 
-            # Format persentase di Ref_Klasifikasi
             pct_col_num = openpyxl.utils.column_index_from_string(ref_pct_col)
             for r_i in range(ref_start_row, ref_end_row + 1):
                 c_pct = ws_ref.cell(row=r_i, column=pct_col_num)
                 if isinstance(c_pct.value, (int, float)):
                     c_pct.number_format = '0.00%'
 
-            # 2. Baca struktur kolom Worksheet Utama
-            headers = [cell.value for cell in ws_main]
+            headers = [cell.value for cell in ws_main[1]]
             col_idx_map = {str(h).strip(): idx + 1 for idx, h in enumerate(headers) if h is not None}
             
             last_row = ws_main.max_row
@@ -335,7 +331,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                     last_no_urut = int(val)
                     break
                     
-            # Ambil huruf kolom dinamis dari Worksheet Utama untuk menyusun rumus yang presisi
             c_acc = get_column_letter(col_idx_map.get('Account', 3))
             c_proj = get_column_letter(col_idx_map.get('Project', 5))
             c_deb = get_column_letter(col_idx_map.get('Debit', 12))
@@ -354,7 +349,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             acc_cols_list = ['Amount in Currency', 'Debit', 'Credit', 'Tags', 'HPP', 'Sisa Persediaan', 'HPP 2025', 'Sisa Persediaan 25', 'HPP 2026', 'Sisa Persediaan 2026']
             pct_cols_list = ['Percentage', 'Percentage 2025', 'Percentage 2026']
 
-            # 3. Append Baris Baru dengan Rumus Hidup (INDEX-MATCH & Perhitungan HPP)
             for _, tx in df_gl_all.iterrows():
                 acc_full = clean_account_name(tx.get('Account', ''))
                 acc_code = str(tx.get('Account_Code', '')).strip()
@@ -367,7 +361,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 tx_date = pd.to_datetime(tx.get('Date'), errors='coerce')
                 date_val = tx_date.to_pydatetime() if pd.notna(tx_date) else tx.get('Date')
                 
-                # Rumus Excel Aktif yang merujuk ke sheet Ref_Klasifikasi
                 f_pct26 = f'=IFERROR(INDEX(Ref_Klasifikasi!${ref_pct_col}${ref_start_row}:${ref_pct_col}${ref_end_row}, MATCH({c_proj}{current_row}, Ref_Klasifikasi!${ref_proj_col}${ref_start_row}:${ref_proj_col}${ref_end_row}, 0)), 0)'
                 f_klk = f'=IFERROR(INDEX(Ref_Klasifikasi!${ref_klk_col}${ref_start_row}:${ref_klk_col}${ref_end_row}, MATCH({c_acc}{current_row}, Ref_Klasifikasi!${ref_acc_col}${ref_start_row}:${ref_acc_col}${ref_end_row}, 0)), "")'
                 f_kpn = f'=IFERROR(INDEX(Ref_Klasifikasi!${ref_kproj_col}${ref_start_row}:${ref_kproj_col}${ref_end_row}, MATCH({c_proj}{current_row}, Ref_Klasifikasi!${ref_proj_col}${ref_start_row}:${ref_proj_col}${ref_end_row}, 0)), "")'
@@ -421,7 +414,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 current_no += 1
                 
             final_data_row = current_row - 1
-            # Terapkan format Accounting pada seluruh baris historis di Worksheet Utama
             for col_name, c_idx in col_idx_map.items():
                 if col_name in acc_cols_list:
                     for r in range(2, last_row + 1):
@@ -434,7 +426,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                         if isinstance(c_cell.value, (int, float)) or (isinstance(c_cell.value, str) and c_cell.value.startswith('=')):
                             c_cell.number_format = '0.00%'
 
-            # Kumpulkan kategori unik tahun 2026 untuk membangun struktur baris Pivot
             hist_2026_records = []
             date_col = col_idx_map.get('Date', 1)
             acc_col = col_idx_map.get('Account', 3)
@@ -462,13 +453,12 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             wb_val.close()
             df_pivot_src = pd.DataFrame(hist_2026_records + new_rows_for_pivot)
             
-            # 4. Buat Sheet Checking_TB_vs_GL (Format Vertikal + Format Accounting)
             if 'Checking_TB_vs_GL' in wb.sheetnames:
                 del wb['Checking_TB_vs_GL']
             ws_chk = wb.create_sheet(title='Checking_TB_vs_GL')
             
             ws_chk.append(ordered_cols)
-            for cell in ws_chk:
+            for cell in ws_chk[1]:
                 cell.font = Font(bold=True, color="FFFFFF")
                 cell.fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
                 
@@ -485,8 +475,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 for cell in row:
                     if isinstance(cell.value, (int, float)):
                         cell.number_format = ACC_FORMAT
-                        
-            # 5. Buat Sheet Pivot_HPP_2026 dengan Rumus Aktif SUMIFS & SUM
             if 'Pivot_HPP_2026' in wb.sheetnames:
                 del wb['Pivot_HPP_2026']
             ws_piv = wb.create_sheet(title='Pivot_HPP_2026')
@@ -498,11 +486,11 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             rng_kpn = f"{ms}!${c_kpn}$2:${c_kpn}${final_data_row}"
             rng_acc = f"{ms}!${c_acc}$2:${c_acc}${final_data_row}"
             
-            # --- TABEL PIVOT 1: Klasifikasi LK (Menggunakan Rumus SUMIFS) ---
+            # --- TABEL PIVOT 1: Klasifikasi LK ---
             ws_piv.append(["RINGKASAN BERDASARKAN KLASIFIKASI LK (2026)"])
             ws_piv["A1"].font = Font(bold=True, size=12)
             ws_piv.append(["Row Labels", "Sum of HPP 2026", "Sum of Sisa Persediaan 2026"])
-            for cell in ws_piv:
+            for cell in ws_piv[2]:
                 cell.font = Font(bold=True)
                 cell.fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
                 
@@ -531,7 +519,7 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             ws_piv.append([])
             ws_piv.append([])
             
-            # --- TABEL PIVOT 2: Rincian Klasifikasi Project New & Account (Menggunakan Rumus SUMIFS) ---
+            # --- TABEL PIVOT 2: Rincian Klasifikasi Project New & Account ---
             start_p2 = ws_piv.max_row + 1
             ws_piv.append(["RINCIAN BERDASARKAN KLASIFIKASI PROJECT NEW & ACCOUNT (2026)"])
             ws_piv.cell(row=start_p2, column=1).font = Font(bold=True, size=12)
@@ -551,7 +539,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 first_child = r_parent + 1
                 last_child = r_parent + len(group)
                 
-                # Baris Induk (Subtotal per Klasifikasi Project New menggunakan SUM dari baris anaknya)
                 ws_piv.append([
                     proj_cat,
                     "",
@@ -562,7 +549,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                     cell.font = Font(bold=True)
                     cell.fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
                     
-                # Baris Anak (Rincian per Account menggunakan SUMIFS 2 kriteria)
                 for _, item in group.iterrows():
                     r_child = ws_piv.max_row + 1
                     acc_val = item['Account']
@@ -583,13 +569,11 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             for cell in ws_piv[gt2_row]:
                 cell.font = Font(bold=True)
                 
-            # Terapkan Format Accounting ke seluruh angka & rumus di Sheet Pivot_HPP_2026
             for row in ws_piv.iter_rows(min_row=3):
                 for cell in row:
                     if cell.column >= 2 and cell.value is not None and not (cell.column == 2 and row[0].row > hdr_p2):
                         cell.number_format = ACC_FORMAT
                         
-            # Bersihkan objek Pivot Table bawaan agar tidak memicu pesan recovery di Excel
             for sheet in wb.worksheets:
                 sheet._pivots = []
                 
@@ -603,4 +587,4 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 data=output,
                 file_name="HPP_Update_Oktober_2026.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+            )
