@@ -112,12 +112,9 @@ def parse_gl_files(gl_files):
             if num_col in df.columns:
                 df[num_col] = pd.to_numeric(df[num_col], errors='coerce').fillna(0.0)
                 
-        # Forward fill Account terlebih dahulu jika export ERP mengelompokkan akun di atas
         if 'Account' in df.columns:
             df['Account'] = df['Account'].ffill()
             
-        # Filter ketat: HANYA ambil baris yang kolom Date-nya berisi tanggal transaksi valid
-        # (Otomatis membuang baris summary akun seperti '13100 Persediaan Bahan Baku (331)' di kolom Date maupun baris Total bawah)
         parsed_dates = pd.to_datetime(df['Date'], errors='coerce')
         df_valid = df[parsed_dates.notna()].copy()
         
@@ -128,7 +125,6 @@ def parse_gl_files(gl_files):
         df_valid['Account_Code'] = [pair[0] for pair in split_pairs]
         df_valid['GL_Account_Desc'] = [pair[1] for pair in split_pairs]
         
-        # Pastikan hanya baris dengan kode akun valid yang diproses
         df_valid = df_valid[df_valid['Account_Code'] != ""].copy()
         df_valid['Tags_Calc'] = df_valid['Debit'] - df_valid['Credit']
         
@@ -214,33 +210,61 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             df_gl_all, df_gl_sum = parse_gl_files(gl_files)
             df_tb = parse_tb_file(tb_file)
             
-            df_check = pd.merge(df_gl_sum, df_tb, on='Account_Code', how='left')
+            df_merge = pd.merge(df_gl_sum, df_tb, on='Account_Code', how='left')
             for col in ['TB_Debit_Berjalan', 'TB_Credit_Berjalan', 'TB_Net_Mutasi']:
-                df_check[col] = df_check[col].fillna(0.0)
-            df_check['TB_Account_Desc'] = df_check['TB_Account_Desc'].fillna('(Tidak ditemukan di TB)')
+                df_merge[col] = df_merge[col].fillna(0.0)
+            df_merge['TB_Account_Desc'] = df_merge['TB_Account_Desc'].fillna('(Tidak ditemukan di TB)')
+            
+            vertical_rows = []
+            for _, r in df_merge.iterrows():
+                acc_code = r['Account_Code']
+                gl_desc = r['GL_Account_Desc']
+                tb_desc = r['TB_Account_Desc']
                 
-            df_check['Selisih_Debit'] = (df_check['GL_Debit'] - df_check['TB_Debit_Berjalan']).round(2)
-            df_check['Selisih_Credit'] = (df_check['GL_Credit'] - df_check['TB_Credit_Berjalan']).round(2)
-            df_check['Selisih_Net'] = (df_check['GL_Net_Mutasi'] - df_check['TB_Net_Mutasi']).round(2)
+                gl_deb = round(float(r['GL_Debit']), 2)
+                gl_cred = round(float(r['GL_Credit']), 2)
+                gl_net = round(float(r['GL_Net_Mutasi']), 2)
+                
+                tb_deb = round(float(r['TB_Debit_Berjalan']), 2)
+                tb_cred = round(float(r['TB_Credit_Berjalan']), 2)
+                tb_net = round(float(r['TB_Net_Mutasi']), 2)
+                
+                diff_deb = round(gl_deb - tb_deb, 2)
+                diff_cred = round(gl_cred - tb_cred, 2)
+                diff_net = round(gl_net - tb_net, 2)
+                
+                status_str = 'BALANCE' if (abs(diff_deb) < 1.0 and abs(diff_cred) < 1.0 and abs(diff_net) < 1.0) else 'SELISIH'
+                
+                vertical_rows.append({
+                    'Sumber': 'GL',
+                    'Nomor Akun': acc_code,
+                    'Nama Akun': gl_desc,
+                    'Debet': gl_deb,
+                    'Kredit': gl_cred,
+                    'Net Mutasi': gl_net
+                })
+                vertical_rows.append({
+                    'Sumber': 'TB',
+                    'Nomor Akun': acc_code,
+                    'Nama Akun': tb_desc,
+                    'Debet': tb_deb,
+                    'Kredit': tb_cred,
+                    'Net Mutasi': tb_net
+                })
+                vertical_rows.append({
+                    'Sumber': 'Selisih (GL - TB)',
+                    'Nomor Akun': acc_code,
+                    'Nama Akun': status_str,
+                    'Debet': diff_deb,
+                    'Kredit': diff_cred,
+                    'Net Mutasi': diff_net
+                })
+                
+            ordered_cols = ['Sumber', 'Nomor Akun', 'Nama Akun', 'Debet', 'Kredit', 'Net Mutasi']
+            df_check = pd.DataFrame(vertical_rows, columns=ordered_cols)
             
-            is_balanced = (
-                (df_check['Selisih_Debit'].abs() < 1.0) &
-                (df_check['Selisih_Credit'].abs() < 1.0) &
-                (df_check['Selisih_Net'].abs() < 1.0)
-            )
-            df_check['Status'] = np.where(is_balanced, 'BALANCE', 'SELISIH')
-            
-            ordered_cols = [
-                'Account_Code', 'GL_Account_Desc', 'TB_Account_Desc',
-                'GL_Debit', 'TB_Debit_Berjalan', 'Selisih_Debit',
-                'GL_Credit', 'TB_Credit_Berjalan', 'Selisih_Credit',
-                'GL_Net_Mutasi', 'TB_Net_Mutasi', 'Selisih_Net',
-                'Status'
-            ]
-            df_check = df_check[ordered_cols]
-            
-            st.subheader("🔍 Hasil Checking Mutasi GL vs TB (Rincian Debit & Credit)")
-            st.dataframe(df_check, use_container_width=True)
+            st.subheader("🔍 Hasil Checking Mutasi GL vs TB")
+            st.dataframe(df_check, use_container_width=True, hide_index=True)
             master_bytes = master_file.getvalue()
             wb_val = openpyxl.load_workbook(BytesIO(master_bytes), data_only=True)
             ws_val = wb_val[wb_val.sheetnames[0]]
@@ -360,7 +384,13 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 cell.fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
                 
             for _, r_chk in df_check.iterrows():
+                row_idx = ws_chk.max_row + 1
                 ws_chk.append(list(r_chk.values))
+                if r_chk['Sumber'] == 'Selisih (GL - TB)':
+                    fill_color = "E2EFDA" if r_chk['Nama Akun'] == 'BALANCE' else "FCE4D6"
+                    for cell in ws_chk[row_idx]:
+                        cell.font = Font(bold=True)
+                        cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
                 
             if 'Pivot_HPP_2026' in wb.sheetnames:
                 del wb['Pivot_HPP_2026']
