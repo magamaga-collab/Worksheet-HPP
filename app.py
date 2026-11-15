@@ -112,19 +112,24 @@ def parse_gl_files(gl_files):
             if num_col in df.columns:
                 df[num_col] = pd.to_numeric(df[num_col], errors='coerce').fillna(0.0)
                 
-        is_summary_row = df['Date'].isna() & df['Number'].isna()
-        df_valid = df[~is_summary_row].copy()
-        
+        # Forward fill Account terlebih dahulu jika export ERP mengelompokkan akun di atas
         if 'Account' in df.columns:
-            df['Account_Filled'] = df['Account'].ffill()
-            df_valid['Account'] = df.loc[df_valid.index, 'Account_Filled']
+            df['Account'] = df['Account'].ffill()
             
+        # Filter ketat: HANYA ambil baris yang kolom Date-nya berisi tanggal transaksi valid
+        # (Otomatis membuang baris summary akun seperti '13100 Persediaan Bahan Baku (331)' di kolom Date maupun baris Total bawah)
+        parsed_dates = pd.to_datetime(df['Date'], errors='coerce')
+        df_valid = df[parsed_dates.notna()].copy()
+        
         cleaned_accs = [clean_account_name(x) for x in df_valid['Account'].tolist()]
         split_pairs = [split_account_code_desc(x) for x in cleaned_accs]
         
         df_valid['Account'] = cleaned_accs
         df_valid['Account_Code'] = [pair[0] for pair in split_pairs]
         df_valid['GL_Account_Desc'] = [pair[1] for pair in split_pairs]
+        
+        # Pastikan hanya baris dengan kode akun valid yang diproses
+        df_valid = df_valid[df_valid['Account_Code'] != ""].copy()
         df_valid['Tags_Calc'] = df_valid['Debit'] - df_valid['Credit']
         
         all_tx.append(df_valid)
@@ -148,7 +153,6 @@ def parse_tb_file(tb_file):
     """Membaca Kolom A dari file TB yang diawali 5 digit kode akun dan mengambil Debit & Credit Bulan Berjalan"""
     df_raw = pd.read_excel(tb_file, header=None)
     
-    # Cari posisi kolom Bulan Berjalan (misal 'Oct 2026' di baris 0 kolom D / indeks 3)
     bb_col_idx = None
     for r_idx in range(min(5, len(df_raw))):
         for c_idx in range(1, len(df_raw.columns)):
@@ -161,7 +165,6 @@ def parse_tb_file(tb_file):
         if bb_col_idx is not None:
             break
             
-    # Default struktur TB: Kolom A (0)=Akun, B-C (1-2)=Initial, D-E (3-4)=Bulan Berjalan
     if bb_col_idx is None:
         bb_col_idx = 3
         
@@ -172,7 +175,6 @@ def parse_tb_file(tb_file):
             continue
         acc_str = str(acc_val).strip()
         
-        # Deteksi baris yang diawali dengan 5 digit kode akun di Kolom A
         match_5digit = re.match(r'^(\d{5})\s*[-–]?\s*(.*)$', acc_str)
         if not match_5digit:
             continue
