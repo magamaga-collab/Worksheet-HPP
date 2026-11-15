@@ -31,18 +31,28 @@ st.title("📊 Otomatisasi HPP, Checking GL vs TB & Pivot Otomatis")
 st.markdown("Unggah **Master HPP (s.d. Bulan Sebelumnya)**, **File Klasifikasi**, **Trial Balance (TB) Bulan Berjalan**, dan **File-file GL** untuk memproses laporan secara otomatis.")
 
 def clean_account_name(val):
-    """Membersihkan nama akun secara aman dari tipe data apapun dan menghapus akhiran (jumlah baris)"""
+    """Membersihkan nama akun dan menghapus akhiran jumlah baris seperti (331)"""
     if pd.isna(val) or val is None:
         return ""
     s = str(val).strip()
     return re.sub(r'\s*\(\d+\)$', '', s).strip()
 
-def extract_account_code(acc_str):
-    """Mengambil kode angka akun di awal string (misal: '13100 Persediaan...' -> '13100')"""
+def split_account_code_desc(acc_str):
+    """Memisahkan 5 digit nomor akun di awal string dan deskripsi akunnya"""
     if pd.isna(acc_str) or acc_str is None:
-        return ""
-    match = re.match(r'^(\d+)', str(acc_str).strip())
-    return match.group(1) if match else str(acc_str).strip()
+        return "", ""
+    s = clean_account_name(acc_str)
+    match = re.match(r'^(\d{5})\s*[-–]?\s*(.*)$', s)
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+    match_any = re.match(r'^(\d+)\s*[-–]?\s*(.*)$', s)
+    if match_any:
+        return match_any.group(1).strip(), match_any.group(2).strip()
+    return "", s
+
+def extract_account_code(acc_str):
+    code, _ = split_account_code_desc(acc_str)
+    return code
 
 def load_klasifikasi(file):
     """Membaca file klasifikasi untuk mapping Project dan Account"""
@@ -84,7 +94,7 @@ def load_klasifikasi(file):
                 
     return proj_map, pct_map, acc_map
 def parse_gl_files(gl_files):
-    """Membaca banyak file GL, membuang baris summary akun/total, dan menghitung sum Debit & Credit per akun"""
+    """Membaca banyak file GL, membuang baris summary akun/total, dan memisahkan kode & deskripsi akun"""
     all_tx = []
     gl_summary_list = []
     
@@ -109,14 +119,18 @@ def parse_gl_files(gl_files):
             df['Account_Filled'] = df['Account'].ffill()
             df_valid['Account'] = df.loc[df_valid.index, 'Account_Filled']
             
-        df_valid['Account'] = [clean_account_name(x) for x in df_valid['Account'].tolist()]
-        df_valid['Account_Code'] = [extract_account_code(x) for x in df_valid['Account'].tolist()]
+        cleaned_accs = [clean_account_name(x) for x in df_valid['Account'].tolist()]
+        split_pairs = [split_account_code_desc(x) for x in cleaned_accs]
+        
+        df_valid['Account'] = cleaned_accs
+        df_valid['Account_Code'] = [p[0] for p in split_pairs]
+        df_valid['Account_Desc'] = [p[1] for p in split_pairs]
         df_valid['Tags_Calc'] = df_valid['Debit'] - df_valid['Credit']
         
         all_tx.append(df_valid)
         
         if not df_valid.empty:
-            grp = df_valid.groupby(['Account_Code', 'Account'], as_index=False).agg(
+            grp = df_valid.groupby(['Account_Code', 'Account_Desc'], as_index=False).agg(
                 GL_Debit=('Debit', 'sum'),
                 GL_Credit=('Credit', 'sum'),
                 GL_Net_Mutasi=('Tags_Calc', 'sum')
@@ -126,51 +140,54 @@ def parse_gl_files(gl_files):
     df_gl_all = pd.concat(all_tx, ignore_index=True) if all_tx else pd.DataFrame()
     df_gl_sum = pd.concat(gl_summary_list, ignore_index=True) if gl_summary_list else pd.DataFrame()
     if not df_gl_sum.empty:
-        df_gl_sum = df_gl_sum.groupby(['Account_Code', 'Account'], as_index=False).sum()
+        df_gl_sum = df_gl_sum.groupby(['Account_Code', 'Account_Desc'], as_index=False).sum()
         
     return df_gl_all, df_gl_sum
 
 def parse_tb_file(tb_file):
-    """Membaca file Trial Balance (TB) multi-header dan mengambil Debit & Credit Bulan Berjalan"""
+    """Membaca Kolom A (index 0) dari file TB yang diawali 5 digit kode akun dan mengambil Debit & Credit Bulan Berjalan"""
     df_raw = pd.read_excel(tb_file, header=None)
     
+    # Cari kolom 'Bulan Berjalan' atau nama bulan di baris header atas (misal Oct 2026)
     bb_col_idx = None
-    header_row = 0
-    for r_idx in range(min(10, len(df_raw))):
+    for r_idx in range(min(6, len(df_raw))):
         for c_idx, val in enumerate(df_raw.iloc[r_idx]):
-            if pd.notna(val) and 'bulan berjalan' in str(val).lower():
-                bb_col_idx = c_idx
-                header_row = r_idx
-                break
+            if pd.notna(val):
+                val_low = str(val).lower()
+                if any(k in val_low for k in ['bulan berjalan', 'jan', 'feb', 'mar', 'apr', 'mei', 'may', 'jun', 'jul', 'agu', 'aug', 'sep', 'okt', 'oct', 'nov', 'des', 'dec']):
+                    if c_idx >= 1:
+                        bb_col_idx = c_idx
+                        break
         if bb_col_idx is not None:
             break
             
+    # Default standar TB: Kolom A (0) = Akun, Kolom B-C (1-2) = Initial, Kolom D-E (3-4) = Bulan Berjalan
     if bb_col_idx is None:
         bb_col_idx = 3
-        data_start_row = 2
-    else:
-        data_start_row = header_row + 2
         
-    df_data = df_raw.iloc[data_start_row:].copy()
     tb_records = []
-    
-    for _, row in df_data.iterrows():
+    for _, row in df_raw.iterrows():
         acc_val = row.iloc[0]
-        if pd.isna(acc_val) or 'total' in str(acc_val).lower():
+        if pd.isna(acc_val):
             continue
         acc_str = str(acc_val).strip()
-        acc_code = extract_account_code(acc_str)
-        if not acc_code:
+        
+        # Deteksi baris yang diawali dengan 5 digit kode akun di Kolom A
+        match_5digit = re.match(r'^(\d{5})\s*[-–]?\s*(.*)$', acc_str)
+        if not match_5digit:
             continue
             
-        debit_bb = pd.to_numeric(row.iloc[bb_col_idx], errors='coerce')
-        credit_bb = pd.to_numeric(row.iloc[bb_col_idx + 1], errors='coerce')
+        acc_code = match_5digit.group(1).strip()
+        acc_desc = match_5digit.group(2).strip()
+        
+        debit_bb = pd.to_numeric(row.iloc[bb_col_idx], errors='coerce') if len(row) > bb_col_idx else 0.0
+        credit_bb = pd.to_numeric(row.iloc[bb_col_idx + 1], errors='coerce') if len(row) > bb_col_idx + 1 else 0.0
         debit_bb = 0.0 if pd.isna(debit_bb) else float(debit_bb)
         credit_bb = 0.0 if pd.isna(credit_bb) else float(credit_bb)
         
         tb_records.append({
             'Account_Code': acc_code,
-            'TB_Account_Name': acc_str,
+            'TB_Account_Desc': acc_desc,
             'TB_Debit_Berjalan': debit_bb,
             'TB_Credit_Berjalan': credit_bb,
             'TB_Net_Mutasi': debit_bb - credit_bb
@@ -195,6 +212,7 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             df_check = pd.merge(df_gl_sum, df_tb, on='Account_Code', how='left')
             for col in ['TB_Debit_Berjalan', 'TB_Credit_Berjalan', 'TB_Net_Mutasi']:
                 df_check[col] = df_check[col].fillna(0.0)
+            df_check['TB_Account_Desc'] = df_check['TB_Account_Desc'].fillna('(Tidak ditemukan di TB)')
                 
             df_check['Selisih_Debit'] = (df_check['GL_Debit'] - df_check['TB_Debit_Berjalan']).round(2)
             df_check['Selisih_Credit'] = (df_check['GL_Credit'] - df_check['TB_Credit_Berjalan']).round(2)
@@ -208,7 +226,7 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             df_check['Status'] = np.where(is_balanced, 'BALANCE', 'SELISIH')
             
             ordered_cols = [
-                'Account_Code', 'Account',
+                'Account_Code', 'Account_Desc', 'TB_Account_Desc',
                 'GL_Debit', 'TB_Debit_Berjalan', 'Selisih_Debit',
                 'GL_Credit', 'TB_Credit_Berjalan', 'Selisih_Credit',
                 'GL_Net_Mutasi', 'TB_Net_Mutasi', 'Selisih_Net',
@@ -247,7 +265,7 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             
             for _, tx in df_gl_all.iterrows():
                 acc_full = str(tx.get('Account', '')).strip()
-                acc_code = extract_account_code(acc_full)
+                acc_code = str(tx.get('Account_Code', '')).strip()
                 proj_name = str(tx.get('Project', '')).strip() if pd.notna(tx.get('Project')) else ""
                 
                 pct_2026 = pct_map.get(proj_name, 0.0)
