@@ -4,7 +4,6 @@ import numpy as np
 import openpyxl
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
-from openpyxl.utils.cell import ILLEGAL_CHARACTERS_RE
 from io import BytesIO
 import re
 
@@ -33,12 +32,14 @@ st.title("📊 Otomatisasi HPP, Checking GL vs TB & Pivot Otomatis")
 st.markdown("Unggah **Master HPP (s.d. Bulan Sebelumnya)**, **File Klasifikasi**, **Trial Balance (TB) Bulan Berjalan**, dan **File-file GL** untuk memproses laporan secara otomatis.")
 
 ACC_FORMAT = '_(* #,##0.00_);_(* (#,##0.00);_(* "-"??_);_(@_)'
+ILLEGAL_CHARS_RE = re.compile(r'[\000-\010]|[\013-\014]|[\016-\037]')
 
 def sanitize_excel_str(val):
     """Menghapus karakter kontrol ilegal agar XML Excel tidak corrupt"""
     if pd.isna(val) or val is None:
         return ""
-    return ILLEGAL_CHARACTERS_RE.sub("", str(val)).strip()
+    return ILLEGAL_CHARS_RE.sub("", str(val)).strip()
+
 
 def clean_account_name(val):
     """Membersihkan nama akun dan menghapus akhiran jumlah baris seperti (331)"""
