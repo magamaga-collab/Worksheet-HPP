@@ -30,9 +30,16 @@ check_password()
 st.title("📊 Otomatisasi HPP, Checking GL vs TB & Pivot Otomatis")
 st.markdown("Unggah **Master HPP (s.d. Bulan Sebelumnya)**, **File Klasifikasi**, **Trial Balance (TB) Bulan Berjalan**, dan **File-file GL** untuk memproses laporan secara otomatis.")
 
+def clean_account_name(val):
+    """Membersihkan nama akun secara aman dari tipe data apapun dan menghapus akhiran (jumlah baris)"""
+    if pd.isna(val) or val is None:
+        return ""
+    s = str(val).strip()
+    return re.sub(r'\s*\(\d+\)$', '', s).strip()
+
 def extract_account_code(acc_str):
     """Mengambil kode angka akun di awal string (misal: '13100 Persediaan...' -> '13100')"""
-    if pd.isna(acc_str):
+    if pd.isna(acc_str) or acc_str is None:
         return ""
     match = re.match(r'^(\d+)', str(acc_str).strip())
     return match.group(1) if match else str(acc_str).strip()
@@ -102,8 +109,8 @@ def parse_gl_files(gl_files):
             df['Account_Filled'] = df['Account'].ffill()
             df_valid['Account'] = df.loc[df_valid.index, 'Account_Filled']
             
-        df_valid['Account'] = df_valid['Account'].astype(str).apply(lambda x: re.sub(r'\s*\(\d+\)$', '', x).strip())
-        df_valid['Account_Code'] = df_valid['Account'].apply(extract_account_code)
+        df_valid['Account'] = [clean_account_name(x) for x in df_valid['Account'].tolist()]
+        df_valid['Account_Code'] = [extract_account_code(x) for x in df_valid['Account'].tolist()]
         df_valid['Tags_Calc'] = df_valid['Debit'] - df_valid['Credit']
         
         all_tx.append(df_valid)
