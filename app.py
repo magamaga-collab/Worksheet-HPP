@@ -253,7 +253,6 @@ def apply_dashboard_styles():
             padding: 2rem 3rem 4rem 3rem !important;
             max-width: 1240px !important;
         }
-        /* Banner Header Eksekutif */
         .dash-hero {
             background: linear-gradient(125deg, #0b3c91 0%, #1d63dc 65%, #3882f6 100%);
             border-radius: 22px;
@@ -274,7 +273,6 @@ def apply_dashboard_styles():
             margin: 0;
             color: rgba(255, 255, 255, 0.88);
         }
-        /* Judul Section Bergaya Glass Badge */
         .section-glass-title {
             background: rgba(255, 255, 255, 0.68);
             backdrop-filter: blur(16px);
@@ -288,7 +286,6 @@ def apply_dashboard_styles():
             font-weight: 700;
             font-size: 1.15rem;
         }
-        /* Kartu Uploader Glassmorphism */
         [data-testid="stFileUploader"] {
             background: rgba(255, 255, 255, 0.65) !important;
             backdrop-filter: blur(16px) !important;
@@ -297,14 +294,13 @@ def apply_dashboard_styles():
             border-radius: 18px !important;
             padding: 1rem 1.2rem !important;
             box-shadow: 0 10px 26px rgba(20, 55, 120, 0.06) !important;
-            margin-bottom: 0.75rem !important;
+            margin-bottom: 0.85rem !important;
         }
         [data-testid="stFileUploader"] section {
             background: rgba(240, 246, 255, 0.75) !important;
             border: 1.5px dashed #7aa7f7 !important;
             border-radius: 12px !important;
         }
-        /* Kartu Metrik Keuangan */
         [data-testid="stMetric"] {
             background: rgba(255, 255, 255, 0.72) !important;
             backdrop-filter: blur(16px) !important;
@@ -313,25 +309,6 @@ def apply_dashboard_styles():
             padding: 1.1rem 1.3rem !important;
             box-shadow: 0 10px 25px rgba(20, 55, 120, 0.07) !important;
         }
-        /* Tabs Glassmorphism */
-        .stTabs [data-baseweb="tab-list"] {
-            background: rgba(255, 255, 255, 0.55);
-            backdrop-filter: blur(12px);
-            padding: 0.35rem;
-            border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.85);
-            gap: 0.4rem;
-        }
-        .stTabs [data-baseweb="tab"] {
-            border-radius: 10px;
-            font-weight: 600;
-            color: #334155;
-        }
-        .stTabs [aria-selected="true"] {
-            background: #1d63dc !important;
-            color: #ffffff !important;
-        }
-        /* Tombol Utama & Unduh */
         .stButton > button, .stDownloadButton > button {
             border-radius: 999px !important;
             font-weight: 600 !important;
@@ -344,10 +321,6 @@ def apply_dashboard_styles():
             color: #ffffff !important;
             border: none !important;
         }
-        .stButton > button:hover, .stDownloadButton > button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 10px 24px rgba(25, 92, 215, 0.38) !important;
-        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -358,7 +331,7 @@ with col_head:
     st.markdown("""
         <div class="dash-hero">
             <h1>📊 Otomatisasi Worksheet HPP & Rekapitulasi GL</h1>
-            <p>Unggah file General Ledger (Excel/CSV) untuk menghasilkan worksheet konsolidasi dan ringkasan pivot otomatis.</p>
+            <p>Unggah file Master HPP, Klasifikasi, Trial Balance, dan General Ledger bulan berjalan untuk pemrosesan otomatis.</p>
         </div>
     """, unsafe_allow_html=True)
 with col_out:
@@ -367,23 +340,8 @@ with col_out:
     if st.button("🚪 Keluar", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
-
-KATEGORI_HPP = [
-    "1. Pembelian Bahan Baku / Barang Dagang",
-    "2. Biaya Angkut Pembelian (Freight In)",
-    "3. Retur & Potongan Pembelian",
-    "4. Biaya Tenaga Kerja Langsung (BTKL)",
-    "5. Biaya Overhead Pabrik (BOP)",
-    "6. Penyesuaian Persediaan (Selisih Stok)",
-    "7. Beban Pokok Lainnya / Subkontrak"
-]
-def parse_uploaded_gl(uploaded_file, kategori_label):
-    fname = uploaded_file.name.lower()
-    if fname.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
-
+def parse_excel_generic(uploaded_file, source_label):
+    df = pd.read_excel(uploaded_file)
     df.columns = [str(c).strip() for c in df.columns]
     df = df.dropna(how="all").copy()
 
@@ -408,7 +366,7 @@ def parse_uploaded_gl(uploaded_file, kategori_label):
             col_map["amount"] = c
 
     out = pd.DataFrame()
-    out["Kategori HPP"] = [kategori_label] * len(df)
+    out["Sumber File"] = [source_label] * len(df)
     out["Tanggal"] = pd.to_datetime(df[col_map["date"]], errors="coerce") if "date" in col_map else pd.NaT
     out["Akun"] = df[col_map["account"]].astype(str).str.strip() if "account" in col_map else "-"
     out["No. Referensi"] = df[col_map["ref"]].astype(str).str.strip() if "ref" in col_map else "-"
@@ -444,32 +402,16 @@ def parse_uploaded_gl(uploaded_file, kategori_label):
     out["Bulan"] = out["Tanggal"].dt.strftime("%Y-%m").fillna("Tanpa Tanggal")
 
     return out
-st.markdown('<div class="section-glass-title">1️⃣ Unggah File General Ledger (7 Kelompok Akun HPP)</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-glass-title">📂 Unggah Dokumen Sumber HPP & General Ledger</div>', unsafe_allow_html=True)
 
-tab_satuan, tab_massal = st.tabs(["📂 Unggah Per Kategori Akun (7 Slot)", "⚡ Unggah Sekaligus (Multi-File)"])
-
-uploaded_map = {}
-
-with tab_satuan:
-    cols = st.columns(2)
-    for idx, kat in enumerate(KATEGORI_HPP):
-        with cols[idx % 2]:
-            f = st.file_uploader(kat, type=["xlsx", "xls", "csv"], key=f"gl_slot_{idx}")
-            if f is not None:
-                uploaded_map[kat] = [f]
-
-with tab_massal:
-    multi_files = st.file_uploader(
-        "Pilih hingga 7 file GL sekaligus",
-        type=["xlsx", "xls", "csv"],
-        accept_multiple_files=True,
-        key="gl_multi"
-    )
-    if multi_files:
-        for idx, f in enumerate(multi_files):
-            kat_target = KATEGORI_HPP[idx % len(KATEGORI_HPP)]
-            uploaded_map.setdefault(kat_target, []).append(f)
-def build_hpp_excel(df_all):
+col1, col2 = st.columns(2)
+with col1:
+    master_file = st.file_uploader("1️⃣ Upload File Master HPP (s.d. September)", type=["xlsx", "xlsm"])
+    klasifikasi_file = st.file_uploader("2️⃣ Upload File Klasifikasi (Pembantu)", type=["xlsx"])
+with col2:
+    tb_file = st.file_uploader("3️⃣ Upload Trial Balance (TB) Bulan Berjalan", type=["xlsx"])
+    gl_files = st.file_uploader("4️⃣ Upload Semua File GL Bulan Berjalan (Bisa pilih banyak)", type=["xlsx"], accept_multiple_files=True)
+def build_hpp_excel(df_all, df_tb=None, df_klas=None):
     wb = Workbook()
     ACC_FORMAT = '_(* #,##0.00_);_(* (#,##0.00);_(* "-"??_);_(@_)'
 
@@ -487,7 +429,7 @@ def build_hpp_excel(df_all):
 
     ws_gl = wb.active
     ws_gl.title = "Konsolidasi_GL"
-    cols_gl = ["Kategori HPP", "Tanggal", "Bulan", "Akun", "No. Referensi", "Rekanan / Vendor", "Keterangan", "Debit", "Kredit", "Net HPP"]
+    cols_gl = ["Sumber File", "Tanggal", "Bulan", "Akun", "No. Referensi", "Rekanan / Vendor", "Keterangan", "Debit", "Kredit", "Net HPP"]
     ws_gl.append(cols_gl)
 
     for col_idx in range(1, len(cols_gl) + 1):
@@ -499,7 +441,7 @@ def build_hpp_excel(df_all):
     for _, r in df_all.iterrows():
         tgl_val = r["Tanggal"].strftime("%Y-%m-%d") if pd.notna(r["Tanggal"]) else ""
         ws_gl.append([
-            r["Kategori HPP"], tgl_val, r["Bulan"], r["Akun"],
+            r["Sumber File"], tgl_val, r["Bulan"], r["Akun"],
             r["No. Referensi"], r["Rekanan / Vendor"], r["Keterangan"],
             float(r["Debit"]), float(r["Kredit"]), float(r["Net HPP"])
         ])
@@ -507,7 +449,7 @@ def build_hpp_excel(df_all):
     for row in ws_gl.iter_rows(min_row=2):
         for cell in row:
             cell.border = thin_border
-            if cell.column in [8, 9, 10] and cell.value is not None:
+            if cell.column in (8, 9, 10) and cell.value is not None:
                 cell.number_format = ACC_FORMAT
 
     ws_piv = wb.create_sheet(title="Ringkasan_Pivot_HPP")
@@ -515,7 +457,7 @@ def build_hpp_excel(df_all):
     ws_piv["A1"].font = Font(bold=True, size=14, color="0B3C91")
 
     piv_bulanan = pd.pivot_table(
-        df_all, values="Net HPP", index="Kategori HPP", columns="Bulan",
+        df_all, values="Net HPP", index="Sumber File", columns="Bulan",
         aggfunc="sum", fill_value=0.0, margins=True, margins_name="Total HPP"
     ).reset_index()
 
@@ -528,7 +470,7 @@ def build_hpp_excel(df_all):
 
     for r_offset, (_, row_data) in enumerate(piv_bulanan.iterrows(), start=1):
         curr_r = start_r1 + r_offset
-        is_total = (str(row_data.iloc[0]) == "Total HPP")
+        is_total = (str(row_data.iloc) == "Total HPP")
         for c_idx, val in enumerate(row_data, start=1):
             cell = ws_piv.cell(row=curr_r, column=c_idx, value=float(val) if c_idx >= 2 else str(val))
             cell.border = thin_border
@@ -537,9 +479,9 @@ def build_hpp_excel(df_all):
                 cell.font = bold_font
 
     hdr_p2 = start_r1 + len(piv_bulanan) + 3
-    ws_piv.cell(row=hdr_p2 - 1, column=1, value="RINCIAN NET HPP PER KATEGORI & AKUN").font = bold_font
+    ws_piv.cell(row=hdr_p2 - 1, column=1, value="RINCIAN NET HPP PER SUMBER FILE & AKUN").font = bold_font
 
-    piv_akun = df_all.groupby(["Kategori HPP", "Akun"], as_index=False)[["Debit", "Kredit", "Net HPP"]].sum()
+    piv_akun = df_all.groupby(["Sumber File", "Akun"], as_index=False)[["Debit", "Kredit", "Net HPP"]].sum()
     for c_idx, col_name in enumerate(piv_akun.columns, start=1):
         cell = ws_piv.cell(row=hdr_p2, column=c_idx, value=str(col_name))
         cell.fill = sub_fill
@@ -561,22 +503,41 @@ def build_hpp_excel(df_all):
     for sheet in [ws_gl, ws_piv]:
         for col in sheet.columns:
             max_len = max((len(str(cell.value or "")) for cell in col), default=10)
-            sheet.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 5, 42)
+            sheet.column_dimensions[get_column_letter(col.column)].width = min(max_len + 5, 42)
 
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf
-st.markdown('<div class="section-glass-title">2️⃣ Proses & Unduh Hasil Worksheet HPP</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-glass-title">⚙️ Proses & Unduh Hasil Worksheet HPP</div>', unsafe_allow_html=True)
 
-if uploaded_map:
+has_any_file = any([master_file, klasifikasi_file, tb_file]) or (gl_files and len(gl_files) > 0)
+
+if has_any_file:
     if st.button("🚀 Proses & Buat Worksheet HPP", type="primary", use_container_width=True):
-        with st.spinner("Sedang menggabungkan dan menghitung rekapitulasi 7 akun GL..."):
+        with st.spinner("Sedang memproses Master HPP, Klasifikasi, TB, dan seluruh file GL..."):
             frames = []
-            for kat, files in uploaded_map.items():
-                for f in files:
+            total_uploaded = 0
+
+            if master_file is not None:
+                master_file.seek(0)
+                frames.append(parse_excel_generic(master_file, f"Master HPP ({master_file.name})"))
+                total_uploaded += 1
+
+            if tb_file is not None:
+                tb_file.seek(0)
+                frames.append(parse_excel_generic(tb_file, f"Trial Balance ({tb_file.name})"))
+                total_uploaded += 1
+
+            if gl_files:
+                for f in gl_files:
                     f.seek(0)
-                    frames.append(parse_uploaded_gl(f, kat))
+                    frames.append(parse_excel_generic(f, f"GL - {f.name}"))
+                    total_uploaded += 1
+
+            df_klas = pd.read_excel(klasifikasi_file) if klasifikasi_file is not None else None
+            if klasifikasi_file is not None:
+                total_uploaded += 1
 
             if frames:
                 df_combined = pd.concat(frames, ignore_index=True)
@@ -585,7 +546,7 @@ if uploaded_map:
                 total_hpp = df_combined["Net HPP"].sum()
 
                 m1, m2, m3, m4 = st.columns(4)
-                m1.metric("Jumlah File GL", f"{sum(len(v) for v in uploaded_map.values())} File")
+                m1.metric("Total Dokumen Diproses", f"{total_uploaded} File")
                 m2.metric("Total Debit", f"Rp {total_debit:,.2f}")
                 m3.metric("Total Kredit", f"Rp {total_kredit:,.2f}")
                 m4.metric("Total Net HPP", f"Rp {total_hpp:,.2f}")
@@ -593,7 +554,7 @@ if uploaded_map:
                 with st.expander("🔍 Lihat Pratinjau Data Konsolidasi (20 Baris Pertama)", expanded=True):
                     st.dataframe(df_combined.head(20), use_container_width=True)
 
-                excel_bytes = build_hpp_excel(df_combined)
+                excel_bytes = build_hpp_excel(df_combined, df_klas=df_klas)
                 st.success("✅ Worksheet HPP berhasil dibuat dan siap diunduh!")
                 st.download_button(
                     label="📥 Unduh Worksheet_HPP_Terkonsolidasi.xlsx",
@@ -602,5 +563,7 @@ if uploaded_map:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
+            else:
+                st.warning("Unggah minimal 1 file transaksi (Master HPP, TB, atau GL) untuk dikonsolidasi.")
 else:
-    st.info("Silakan unggah minimal 1 file General Ledger pada kolom di atas untuk memulai pemrosesan.")
+    st.info("Silakan unggah file pada keempat kolom di atas untuk memulai pemrosesan.")
