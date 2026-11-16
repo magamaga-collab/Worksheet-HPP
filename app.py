@@ -501,9 +501,9 @@ def build_hpp_excel(df_all, df_tb=None, df_klas=None):
                     cell.number_format = ACC_FORMAT
 
     for sheet in [ws_gl, ws_piv]:
-        for col in sheet.columns:
+        for col_idx, col in enumerate(sheet.columns, start=1):
             max_len = max((len(str(cell.value or "")) for cell in col), default=10)
-            sheet.column_dimensions[get_column_letter(col.column)].width = min(max_len + 5, 42)
+            sheet.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 5, 42)
 
     buf = io.BytesIO()
     wb.save(buf)
