@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import io
-import re
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -17,147 +16,357 @@ st.set_page_config(
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
-# Mengambil password dari Streamlit Secrets (atau fallback default 'admin123')
 APP_PASSWORD = st.secrets.get("APP_PASSWORD", "admin123")
 def apply_login_styles():
     st.markdown("""
         <style>
-        header, footer, [data-testid="stToolbar"] {visibility: hidden;}
+        header, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] {
+            display: none !important;
+        }
         .block-container {
             padding: 0rem !important;
             max-width: 100% !important;
         }
         [data-testid="stAppViewContainer"] {
-            background: linear-gradient(90deg, #0b3c91 0%, #1d63dc 50%, #eef2f8 50%, #f8fafd 100%);
+            background: linear-gradient(90deg, #0b3c91 0%, #1d63dc 50%, #eef2f8 50%, #f4f7fc 100%);
             min-height: 100vh;
+            overflow-x: hidden;
+        }
+        [data-testid="stHorizontalBlock"] {
+            gap: 0rem !important;
+            min-height: 100vh !important;
+            align-items: stretch !important;
         }
         .left-hero {
             height: 100vh;
             display: flex;
             flex-direction: column;
             justify-content: center;
-            padding: 4rem 5rem;
+            padding: 3rem 4.5rem;
             color: white;
             position: relative;
             overflow: hidden;
-            background: radial-gradient(circle at 20% 30%, rgba(255,255,255,0.12) 0%, transparent 60%),
-                        linear-gradient(135deg, #0a3685 0%, #1b5fd4 60%, #3a82f6 100%);
+            background: radial-gradient(circle at 30% 25%, #2b75f5 0%, #0d429e 65%, #072966 100%);
+        }
+        .left-hero-svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0.92;
+        }
+        .left-hero-content {
+            position: relative;
+            z-index: 2;
+            margin-top: 2rem;
         }
         .left-hero h1 {
-            font-size: 2.8rem; font-weight: 700; line-height: 1.25;
-            margin-bottom: 1rem; z-index: 2; color: #ffffff;
+            font-size: 2.75rem;
+            font-weight: 700;
+            line-height: 1.22;
+            margin-bottom: 1rem;
+            color: #ffffff;
+            text-shadow: 0 4px 18px rgba(0, 15, 50, 0.35);
         }
         .left-hero p {
-            font-size: 1.1rem; opacity: 0.85; z-index: 2; max-width: 460px;
+            font-size: 1.05rem;
+            color: rgba(255, 255, 255, 0.88);
+            max-width: 440px;
+            line-height: 1.55;
         }
-        .glass-cube-1 {
-            position: absolute; top: 12%; right: 15%; width: 180px; height: 180px;
-            background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.25);
-            border-radius: 16px; transform: rotate(15deg); backdrop-filter: blur(6px);
+        [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2) {
+            position: relative;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            align-items: center !important;
+            min-height: 100vh !important;
+            background: radial-gradient(circle at 80% 18%, rgba(163, 198, 255, 0.45) 0%, transparent 22%),
+                        radial-gradient(circle at 22% 78%, rgba(130, 177, 255, 0.5) 0%, transparent 25%),
+                        radial-gradient(circle at 82% 85%, rgba(190, 214, 255, 0.4) 0%, transparent 18%),
+                        #eff3fa;
+            padding: 2rem !important;
         }
-        .glass-cube-2 {
-            position: absolute; bottom: 14%; left: 10%; width: 220px; height: 220px;
-            background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 20px; transform: rotate(-12deg); backdrop-filter: blur(4px);
+        .orb-1, .orb-2, .orb-3 {
+            position: fixed;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), rgba(145,185,255,0.55) 60%, rgba(85,140,245,0.35));
+            box-shadow: inset -6px -6px 16px rgba(45, 95, 195, 0.25), 0 12px 28px rgba(30, 75, 165, 0.15);
+            pointer-events: none;
+            z-index: 1;
         }
-        div[data-testid="column"]:nth-of-type(2) > div {
-            display: flex; flex-direction: column; justify-content: center;
-            min-height: 100vh; padding: 2rem 3.5rem;
+        .orb-1 { width: 95px; height: 95px; top: 14%; right: 8%; }
+        .orb-2 { width: 125px; height: 125px; bottom: 13%; left: 53%; }
+        .orb-3 { width: 52px; height: 52px; top: 20%; left: 56%; }
+
+        .login-wrapper {
+            position: relative;
+            z-index: 3;
+            width: 100%;
+            max-width: 440px;
+            margin: 0 auto;
         }
-        .glass-card-header {
-            background: rgba(255, 255, 255, 0.68);
-            backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-            border: 1px solid rgba(255, 255, 255, 0.9);
-            border-radius: 24px 24px 0 0; border-bottom: none;
-            padding: 2.5rem 2.5rem 1rem 2.5rem;
-            box-shadow: 0 20px 40px rgba(15, 45, 95, 0.08); text-align: center;
+        .glass-card-top {
+            background: rgba(255, 255, 255, 0.58);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1.5px solid rgba(255, 255, 255, 0.92);
+            border-bottom: none;
+            border-radius: 26px 26px 0 0;
+            padding: 2.5rem 2.2rem 1.2rem 2.2rem;
+            text-align: center;
+            box-shadow: 0 -10px 35px rgba(20, 55, 120, 0.06);
         }
         .lock-badge {
-            width: 68px; height: 68px; margin: 0 auto 1.2rem auto;
-            background: linear-gradient(135deg, #e0ebff 0%, #c2d7ff 100%);
-            border-radius: 18px; display: flex; align-items: center;
-            justify-content: center; font-size: 2rem;
-            box-shadow: 0 8px 20px rgba(29, 99, 220, 0.18);
-        }
-        .glass-card-header h2 {
-            color: #0f172a; font-size: 1.65rem; font-weight: 700; margin-bottom: 0.4rem;
-        }
-        .glass-card-header p {
-            color: #475569; font-size: 0.95rem; margin-bottom: 0;
-        }
-        [data-testid="stForm"] {
-            background: rgba(255, 255, 255, 0.68);
-            backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+            width: 74px;
+            height: 74px;
+            margin: 0 auto 1.25rem auto;
+            background: linear-gradient(145deg, #ffffff 0%, #dbe8ff 100%);
             border: 1px solid rgba(255, 255, 255, 0.9);
-            border-top: none; border-radius: 0 0 24px 24px;
-            padding: 1rem 2.5rem 2.5rem 2.5rem !important;
-            box-shadow: 0 20px 40px rgba(15, 45, 95, 0.08);
+            border-radius: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.2rem;
+            box-shadow: 0 12px 26px rgba(25, 85, 195, 0.22);
         }
-        [data-testid="stFormSubmitButton"] button {
+        .glass-card-top h2 {
+            color: #0f172a;
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 0.45rem;
+        }
+        .glass-card-top p {
+            color: #475569;
+            font-size: 0.92rem;
+            line-height: 1.45;
+            margin: 0;
+        }
+        div[data-testid="stForm"] {
+            position: relative;
+            z-index: 3;
             width: 100%;
-            background: linear-gradient(90deg, #1354c6 0%, #256ef1 100%) !important;
-            color: white !important; border: none !important;
-            border-radius: 12px !important; padding: 0.65rem 1rem !important;
-            font-weight: 600 !important; font-size: 1rem !important;
-            margin-top: 0.5rem; box-shadow: 0 6px 16px rgba(29, 99, 220, 0.3);
+            max-width: 440px;
+            margin: 0 auto !important;
+            background: rgba(255, 255, 255, 0.58) !important;
+            backdrop-filter: blur(20px) !important;
+            -webkit-backdrop-filter: blur(20px) !important;
+            border: 1.5px solid rgba(255, 255, 255, 0.92) !important;
+            border-top: none !important;
+            border-radius: 0 0 26px 26px !important;
+            padding: 0.5rem 2.2rem 2.5rem 2.2rem !important;
+            box-shadow: 0 22px 45px rgba(20, 55, 120, 0.12) !important;
+        }
+        div[data-testid="stFormSubmitButton"],
+        div[data-testid="stFormSubmitButton"] > button {
+            width: 100% !important;
+            display: block !important;
+        }
+        div[data-testid="stFormSubmitButton"] > button {
+            background: linear-gradient(90deg, #1252c4 0%, #256ef1 100%) !important;
+            color: #ffffff !important;
+            border: none !important;
+            border-radius: 999px !important;
+            padding: 0.7rem 1.5rem !important;
+            font-size: 1rem !important;
+            font-weight: 600 !important;
+            margin-top: 0.75rem !important;
+            box-shadow: 0 8px 20px rgba(25, 92, 215, 0.35) !important;
+            transition: all 0.2s ease !important;
+        }
+        div[data-testid="stFormSubmitButton"] > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(25, 92, 215, 0.48) !important;
         }
         </style>
     """, unsafe_allow_html=True)
 def render_login_page():
     apply_login_styles()
-    col_left, col_right = st.columns([1.15, 1], gap="small")
+    col_left, col_right = st.columns([1.05, 1], gap="small")
 
     with col_left:
         st.markdown("""
             <div class="left-hero">
-                <div class="glass-cube-1"></div>
-                <div class="glass-cube-2"></div>
-                <h1>Sistem Otomatisasi HPP & Laporan Keuangan</h1>
-                <p>Platform terintegrasi untuk pengolahan General Ledger, kalkulasi harga pokok penjualan, dan pelaporan akurat.</p>
+                <svg class="left-hero-svg" viewBox="0 0 800 900" fill="none" xmlns="http://w3.org">
+                    <polygon points="360,120 560,235 360,350 160,235" fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.35)" stroke-width="2"/>
+                    <polygon points="160,235 360,350 360,580 160,465" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.28)" stroke-width="2"/>
+                    <polygon points="560,235 360,350 360,580 560,465" fill="rgba(255,255,255,0.11)" stroke="rgba(255,255,255,0.32)" stroke-width="2"/>
+                    <polygon points="620,70 740,140 620,210 500,140" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+                    <polygon points="500,140 620,210 620,350 500,280" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"/>
+                    <polygon points="740,140 620,210 620,350 740,280" fill="rgba(255,255,255,0.09)" stroke="rgba(255,255,255,0.25)" stroke-width="1.5"/>
+                    <polygon points="560,510 740,615 560,720 380,615" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+                    <polygon points="380,615 560,720 560,880 380,775" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.25)" stroke-width="1.5"/>
+                    <polygon points="740,615 560,720 560,880 740,775" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.28)" stroke-width="1.5"/>
+                    <rect x="430" y="730" width="16" height="55" rx="3" fill="rgba(160,210,255,0.45)"/>
+                    <rect x="456" y="715" width="16" height="82" rx="3" fill="rgba(180,220,255,0.55)"/>
+                    <rect x="482" y="700" width="16" height="110" rx="3" fill="rgba(210,235,255,0.65)"/>
+                    <rect x="508" y="685" width="16" height="138" rx="3" fill="rgba(255,255,255,0.75)"/>
+                </svg>
+                <div class="left-hero-content">
+                    <h1>Sistem Otomatisasi HPP & Laporan Keuangan</h1>
+                    <p>Platform terintegrasi untuk pengolahan General Ledger, kalkulasi harga pokok penjualan, dan pelaporan akurat.</p>
+                </div>
             </div>
         """, unsafe_allow_html=True)
 
     with col_right:
-        _, center_box, _ = st.columns([0.08, 1.84, 0.08])
-        with center_box:
-            st.markdown("""
-                <div class="glass-card-header">
+        st.markdown("""
+            <div class="orb-1"></div>
+            <div class="orb-2"></div>
+            <div class="orb-3"></div>
+            <div class="login-wrapper">
+                <div class="glass-card-top">
                     <div class="lock-badge">🔒</div>
                     <h2>Akses Terbatas - Aplikasi HPP</h2>
-                    <p>Silakan masukkan kata sandi untuk mengakses sistem laporan HPP</p>
+                    <p>Silakan masukkan kata sandi untuk mengakses<br>sistem laporan HPP</p>
                 </div>
-            """, unsafe_allow_html=True)
+            </div>
+        """, unsafe_allow_html=True)
 
-            with st.form("login_form"):
-                password = st.text_input("Masukkan Password Aplikasi:", type="password", placeholder="••••••••")
-                submitted = st.form_submit_button("Masuk")
-                if submitted:
-                    if password == APP_PASSWORD:
-                        st.session_state.authenticated = True
-                        st.rerun()
-                    else:
-                        st.error("Password salah. Silakan coba lagi.")
+        with st.form("login_form"):
+            password = st.text_input("Masukkan Password Aplikasi:", type="password", placeholder="••••••••")
+            submitted = st.form_submit_button("Masuk")
+            if submitted:
+                if password == APP_PASSWORD:
+                    st.session_state.authenticated = True
+                    st.rerun()
+                else:
+                    st.error("Password salah. Silakan coba lagi.")
 
 if not st.session_state.authenticated:
     render_login_page()
     st.stop()
-st.markdown("""
-    <style>
-    .block-container { padding: 2rem 3rem !important; max-width: 1200px !important; }
-    </style>
-""", unsafe_allow_html=True)
+def apply_dashboard_styles():
+    st.markdown("""
+        <style>
+        header, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] {
+            display: none !important;
+        }
+        [data-testid="stAppViewContainer"] {
+            background: radial-gradient(circle at 12% 10%, rgba(160, 198, 255, 0.35) 0%, transparent 32%),
+                        radial-gradient(circle at 88% 85%, rgba(135, 180, 255, 0.32) 0%, transparent 35%),
+                        linear-gradient(135deg, #eaf0fa 0%, #f5f8fe 50%, #e6eefb 100%);
+            min-height: 100vh;
+        }
+        .block-container {
+            padding: 2rem 3rem 4rem 3rem !important;
+            max-width: 1240px !important;
+        }
+        /* Banner Header Eksekutif */
+        .dash-hero {
+            background: linear-gradient(125deg, #0b3c91 0%, #1d63dc 65%, #3882f6 100%);
+            border-radius: 22px;
+            padding: 1.8rem 2.2rem;
+            color: white;
+            box-shadow: 0 16px 36px rgba(13, 62, 152, 0.22);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            margin-bottom: 1.5rem;
+        }
+        .dash-hero h1 {
+            font-size: 1.85rem;
+            font-weight: 700;
+            margin: 0 0 0.35rem 0;
+            color: #ffffff;
+        }
+        .dash-hero p {
+            font-size: 0.96rem;
+            margin: 0;
+            color: rgba(255, 255, 255, 0.88);
+        }
+        /* Judul Section Bergaya Glass Badge */
+        .section-glass-title {
+            background: rgba(255, 255, 255, 0.68);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            padding: 0.95rem 1.4rem;
+            margin: 1.2rem 0 1rem 0;
+            box-shadow: 0 8px 24px rgba(15, 45, 95, 0.06);
+            color: #0f172a;
+            font-weight: 700;
+            font-size: 1.15rem;
+        }
+        /* Kartu Uploader Glassmorphism */
+        [data-testid="stFileUploader"] {
+            background: rgba(255, 255, 255, 0.65) !important;
+            backdrop-filter: blur(16px) !important;
+            -webkit-backdrop-filter: blur(16px) !important;
+            border: 1px solid rgba(255, 255, 255, 0.92) !important;
+            border-radius: 18px !important;
+            padding: 1rem 1.2rem !important;
+            box-shadow: 0 10px 26px rgba(20, 55, 120, 0.06) !important;
+            margin-bottom: 0.75rem !important;
+        }
+        [data-testid="stFileUploader"] section {
+            background: rgba(240, 246, 255, 0.75) !important;
+            border: 1.5px dashed #7aa7f7 !important;
+            border-radius: 12px !important;
+        }
+        /* Kartu Metrik Keuangan */
+        [data-testid="stMetric"] {
+            background: rgba(255, 255, 255, 0.72) !important;
+            backdrop-filter: blur(16px) !important;
+            border: 1px solid rgba(255, 255, 255, 0.95) !important;
+            border-radius: 18px !important;
+            padding: 1.1rem 1.3rem !important;
+            box-shadow: 0 10px 25px rgba(20, 55, 120, 0.07) !important;
+        }
+        /* Tabs Glassmorphism */
+        .stTabs [data-baseweb="tab-list"] {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(12px);
+            padding: 0.35rem;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.85);
+            gap: 0.4rem;
+        }
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 10px;
+            font-weight: 600;
+            color: #334155;
+        }
+        .stTabs [aria-selected="true"] {
+            background: #1d63dc !important;
+            color: #ffffff !important;
+        }
+        /* Tombol Utama & Unduh */
+        .stButton > button, .stDownloadButton > button {
+            border-radius: 999px !important;
+            font-weight: 600 !important;
+            padding: 0.65rem 1.4rem !important;
+            box-shadow: 0 8px 20px rgba(25, 92, 215, 0.25) !important;
+            transition: all 0.2s ease !important;
+        }
+        .stButton > button[kind="primary"], .stDownloadButton > button {
+            background: linear-gradient(90deg, #1252c4 0%, #256ef1 100%) !important;
+            color: #ffffff !important;
+            border: none !important;
+        }
+        .stButton > button:hover, .stDownloadButton > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(25, 92, 215, 0.38) !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-col_title, col_logout = st.columns([5, 1])
-with col_title:
-    st.title("📊 Otomatisasi Worksheet HPP & Rekapitulasi GL")
-    st.caption("Unggah file General Ledger (Excel/CSV) untuk menghasilkan worksheet konsolidasi dan ringkasan pivot otomatis.")
-with col_logout:
+apply_dashboard_styles()
+
+col_head, col_out = st.columns([5.5, 1])
+with col_head:
+    st.markdown("""
+        <div class="dash-hero">
+            <h1>📊 Otomatisasi Worksheet HPP & Rekapitulasi GL</h1>
+            <p>Unggah file General Ledger (Excel/CSV) untuk menghasilkan worksheet konsolidasi dan ringkasan pivot otomatis.</p>
+        </div>
+    """, unsafe_allow_html=True)
+with col_out:
+    st.write("")
     st.write("")
     if st.button("🚪 Keluar", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
-
-st.divider()
 
 KATEGORI_HPP = [
     "1. Pembelian Bahan Baku / Barang Dagang",
@@ -178,7 +387,6 @@ def parse_uploaded_gl(uploaded_file, kategori_label):
     df.columns = [str(c).strip() for c in df.columns]
     df = df.dropna(how="all").copy()
 
-    # Deteksi otomatis kolom utama
     col_map = {}
     for c in df.columns:
         cl = c.lower()
@@ -207,7 +415,6 @@ def parse_uploaded_gl(uploaded_file, kategori_label):
     out["Rekanan / Vendor"] = df[col_map["partner"]].astype(str).str.strip() if "partner" in col_map else "-"
     out["Keterangan"] = df[col_map["desc"]].astype(str).str.strip() if "desc" in col_map else "-"
 
-    # Konversi angka bersih
     def to_num(series):
         return pd.to_numeric(
             series.astype(str).str.replace(",", "", regex=False).str.replace(r"[^\d.\-]", "", regex=True),
@@ -231,14 +438,13 @@ def parse_uploaded_gl(uploaded_file, kategori_label):
         out["Kredit"] = 0.0
         out["Net HPP"] = 0.0
 
-    # Hapus baris total/saldo awal yang tidak memiliki transaksi valid
     mask_invalid = out["Akun"].str.lower().isin(["nan", "none", "total", "subtotal", "initial balance", "saldo awal"])
     out = out[~mask_invalid].copy()
     out = out[(out["Debit"] != 0) | (out["Kredit"] != 0) | (out["Tanggal"].notna())].copy()
     out["Bulan"] = out["Tanggal"].dt.strftime("%Y-%m").fillna("Tanpa Tanggal")
 
     return out
-st.subheader("1️⃣ Unggah File General Ledger (7 Kelompok Akun HPP)")
+st.markdown('<div class="section-glass-title">1️⃣ Unggah File General Ledger (7 Kelompok Akun HPP)</div>', unsafe_allow_html=True)
 
 tab_satuan, tab_massal = st.tabs(["📂 Unggah Per Kategori Akun (7 Slot)", "⚡ Unggah Sekaligus (Multi-File)"])
 
@@ -254,7 +460,7 @@ with tab_satuan:
 
 with tab_massal:
     multi_files = st.file_uploader(
-        "Pilih hingga 7 file GL sekaligus (akan dikelompokkan berdasarkan urutan atau nama file)",
+        "Pilih hingga 7 file GL sekaligus",
         type=["xlsx", "xls", "csv"],
         accept_multiple_files=True,
         key="gl_multi"
@@ -279,7 +485,6 @@ def build_hpp_excel(df_all):
         bottom=Side(style="thin", color="CBD5E1"),
     )
 
-    # --- SHEET 1: KONSOLIDASI GL ---
     ws_gl = wb.active
     ws_gl.title = "Konsolidasi_GL"
     cols_gl = ["Kategori HPP", "Tanggal", "Bulan", "Akun", "No. Referensi", "Rekanan / Vendor", "Keterangan", "Debit", "Kredit", "Net HPP"]
@@ -305,12 +510,10 @@ def build_hpp_excel(df_all):
             if cell.column in [8, 9, 10] and cell.value is not None:
                 cell.number_format = ACC_FORMAT
 
-    # --- SHEET 2: RINGKASAN PIVOT HPP ---
     ws_piv = wb.create_sheet(title="Ringkasan_Pivot_HPP")
     ws_piv["A1"] = "RINGKASAN KALKULASI HARGA POKOK PENJUALAN (HPP)"
     ws_piv["A1"].font = Font(bold=True, size=14, color="0B3C91")
 
-    # Tabel 1: Pivot Kategori vs Bulan
     piv_bulanan = pd.pivot_table(
         df_all, values="Net HPP", index="Kategori HPP", columns="Bulan",
         aggfunc="sum", fill_value=0.0, margins=True, margins_name="Total HPP"
@@ -333,7 +536,6 @@ def build_hpp_excel(df_all):
                 cell.fill = total_fill
                 cell.font = bold_font
 
-    # Tabel 2: Rincian Per Akun
     hdr_p2 = start_r1 + len(piv_bulanan) + 3
     ws_piv.cell(row=hdr_p2 - 1, column=1, value="RINCIAN NET HPP PER KATEGORI & AKUN").font = bold_font
 
@@ -350,14 +552,12 @@ def build_hpp_excel(df_all):
             cell = ws_piv.cell(row=curr_r, column=c_idx, value=float(val) if c_idx >= 3 else str(val))
             cell.border = thin_border
 
-    # Format angka akuntansi dengan cell.row (bebas AttributeError)
     for row in ws_piv.iter_rows(min_row=4):
         for cell in row:
             if cell.column >= 2 and cell.value is not None and not (cell.column == 2 and cell.row >= hdr_p2):
                 if isinstance(cell.value, (int, float)):
                     cell.number_format = ACC_FORMAT
 
-    # Auto-fit lebar kolom kedua sheet
     for sheet in [ws_gl, ws_piv]:
         for col in sheet.columns:
             max_len = max((len(str(cell.value or "")) for cell in col), default=10)
@@ -367,7 +567,7 @@ def build_hpp_excel(df_all):
     wb.save(buf)
     buf.seek(0)
     return buf
-st.subheader("2️⃣ Proses & Unduh Hasil Worksheet HPP")
+st.markdown('<div class="section-glass-title">2️⃣ Proses & Unduh Hasil Worksheet HPP</div>', unsafe_allow_html=True)
 
 if uploaded_map:
     if st.button("🚀 Proses & Buat Worksheet HPP", type="primary", use_container_width=True):
