@@ -7,30 +7,325 @@ from openpyxl.utils import get_column_letter
 from io import BytesIO
 import re
 
-st.set_page_config(page_title="Otomatisasi HPP & Rekonsiliasi GL-TB", layout="wide")
+st.set_page_config(
+    page_title="Otomatisasi HPP & Rekonsiliasi GL-TB",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
+def apply_login_styles():
+    st.markdown("""
+        <style>
+        header, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] {
+            display: none !important;
+        }
+        .block-container {
+            padding: 0rem !important;
+            max-width: 100% !important;
+        }
+        [data-testid="stAppViewContainer"] {
+            background: linear-gradient(90deg, #0b3c91 0%, #1d63dc 50%, #eef2f8 50%, #f4f7fc 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        [data-testid="stHorizontalBlock"] {
+            gap: 0rem !important;
+            min-height: 100vh !important;
+            align-items: stretch !important;
+        }
+        .left-hero {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 3rem 4.5rem;
+            color: white;
+            position: relative;
+            overflow: hidden;
+            background: radial-gradient(circle at 30% 25%, #2b75f5 0%, #0d429e 65%, #072966 100%);
+        }
+        .left-hero-svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0.92;
+        }
+        .left-hero-content {
+            position: relative;
+            z-index: 2;
+            margin-top: 2rem;
+        }
+        .left-hero h1 {
+            font-size: 2.75rem;
+            font-weight: 700;
+            line-height: 1.22;
+            margin-bottom: 1rem;
+            color: #ffffff;
+            text-shadow: 0 4px 18px rgba(0, 15, 50, 0.35);
+        }
+        .left-hero p {
+            font-size: 1.05rem;
+            color: rgba(255, 255, 255, 0.88);
+            max-width: 440px;
+            line-height: 1.55;
+        }
+        [data-testid="stHorizontalBlock"] > [data-testid="column"]:nth-child(2) {
+            position: relative;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: center !important;
+            align-items: center !important;
+            min-height: 100vh !important;
+            background: radial-gradient(circle at 80% 18%, rgba(163, 198, 255, 0.45) 0%, transparent 22%),
+                        radial-gradient(circle at 22% 78%, rgba(130, 177, 255, 0.5) 0%, transparent 25%),
+                        radial-gradient(circle at 82% 85%, rgba(190, 214, 255, 0.4) 0%, transparent 18%),
+                        #eff3fa;
+            padding: 2rem !important;
+        }
+        .orb-1, .orb-2, .orb-3 {
+            position: fixed;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), rgba(145,185,255,0.55) 60%, rgba(85,140,245,0.35));
+            box-shadow: inset -6px -6px 16px rgba(45, 95, 195, 0.25), 0 12px 28px rgba(30, 75, 165, 0.15);
+            pointer-events: none;
+            z-index: 1;
+        }
+        .orb-1 { width: 95px; height: 95px; top: 14%; right: 8%; }
+        .orb-2 { width: 125px; height: 125px; bottom: 13%; left: 53%; }
+        .orb-3 { width: 52px; height: 52px; top: 20%; left: 56%; }
+
+        .login-wrapper {
+            position: relative;
+            z-index: 3;
+            width: 100%;
+            max-width: 440px;
+            margin: 0 auto;
+        }
+        .glass-card-top {
+            background: rgba(255, 255, 255, 0.58);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1.5px solid rgba(255, 255, 255, 0.92);
+            border-bottom: none;
+            border-radius: 26px 26px 0 0;
+            padding: 2.5rem 2.2rem 1.2rem 2.2rem;
+            text-align: center;
+            box-shadow: 0 -10px 35px rgba(20, 55, 120, 0.06);
+        }
+        .lock-badge {
+            width: 74px;
+            height: 74px;
+            margin: 0 auto 1.25rem auto;
+            background: linear-gradient(145deg, #ffffff 0%, #dbe8ff 100%);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            border-radius: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.2rem;
+            box-shadow: 0 12px 26px rgba(25, 85, 195, 0.22);
+        }
+        .glass-card-top h2 {
+            color: #0f172a;
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 0.45rem;
+        }
+        .glass-card-top p {
+            color: #475569;
+            font-size: 0.92rem;
+            line-height: 1.45;
+            margin: 0;
+        }
+        div[data-testid="stForm"] {
+            position: relative;
+            z-index: 3;
+            width: 100%;
+            max-width: 440px;
+            margin: 0 auto !important;
+            background: rgba(255, 255, 255, 0.58) !important;
+            backdrop-filter: blur(20px) !important;
+            -webkit-backdrop-filter: blur(20px) !important;
+            border: 1.5px solid rgba(255, 255, 255, 0.92) !important;
+            border-top: none !important;
+            border-radius: 0 0 26px 26px !important;
+            padding: 0.5rem 2.2rem 2.5rem 2.2rem !important;
+            box-shadow: 0 22px 45px rgba(20, 55, 120, 0.12) !important;
+        }
+        div[data-testid="stFormSubmitButton"],
+        div[data-testid="stFormSubmitButton"] > button {
+            width: 100% !important;
+            display: block !important;
+        }
+        div[data-testid="stFormSubmitButton"] > button {
+            background: linear-gradient(90deg, #1252c4 0%, #256ef1 100%) !important;
+            color: #ffffff !important;
+            border: none !important;
+            border-radius: 999px !important;
+            padding: 0.7rem 1.5rem !important;
+            font-size: 1rem !important;
+            font-weight: 600 !important;
+            margin-top: 0.75rem !important;
+            box-shadow: 0 8px 20px rgba(25, 92, 215, 0.35) !important;
+            transition: all 0.2s ease !important;
+        }
+        div[data-testid="stFormSubmitButton"] > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(25, 92, 215, 0.48) !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 # --- SISTEM KEAMANAN PASSWORD ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
 
     if not st.session_state["password_correct"]:
-        st.title("🔒 Akses Terbatas - Aplikasi HPP")
-        pwd = st.text_input("Masukkan Password Aplikasi:", type="password")
-        if st.button("Masuk"):
-            if "APP_PASSWORD" in st.secrets and pwd == st.secrets["APP_PASSWORD"]:
-                st.session_state["password_correct"] = True
-                st.rerun()
-            else:
-                st.error("❌ Password salah atau belum diatur di Streamlit Secrets.")
+        apply_login_styles()
+        col_left, col_right = st.columns([1.05, 1], gap="small")
+
+        with col_left:
+            st.markdown("""
+                <div class="left-hero">
+                    <svg class="left-hero-svg" viewBox="0 0 800 900" fill="none" xmlns="http://w3.org">
+                        <polygon points="360,120 560,235 360,350 160,235" fill="rgba(255,255,255,0.14)" stroke="rgba(255,255,255,0.35)" stroke-width="2"/>
+                        <polygon points="160,235 360,350 360,580 160,465" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.28)" stroke-width="2"/>
+                        <polygon points="560,235 360,350 360,580 560,465" fill="rgba(255,255,255,0.11)" stroke="rgba(255,255,255,0.32)" stroke-width="2"/>
+                        <polygon points="620,70 740,140 620,210 500,140" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+                        <polygon points="500,140 620,210 620,350 500,280" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"/>
+                        <polygon points="740,140 620,210 620,350 740,280" fill="rgba(255,255,255,0.09)" stroke="rgba(255,255,255,0.25)" stroke-width="1.5"/>
+                        <polygon points="560,510 740,615 560,720 380,615" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+                        <polygon points="380,615 560,720 560,880 380,775" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.25)" stroke-width="1.5"/>
+                        <polygon points="740,615 560,720 560,880 740,775" fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.28)" stroke-width="1.5"/>
+                        <rect x="430" y="730" width="16" height="55" rx="3" fill="rgba(160,210,255,0.45)"/>
+                        <rect x="456" y="715" width="16" height="82" rx="3" fill="rgba(180,220,255,0.55)"/>
+                        <rect x="482" y="700" width="16" height="110" rx="3" fill="rgba(210,235,255,0.65)"/>
+                        <rect x="508" y="685" width="16" height="138" rx="3" fill="rgba(255,255,255,0.75)"/>
+                    </svg>
+                    <div class="left-hero-content">
+                        <h1>Sistem Otomatisasi HPP & Laporan Keuangan</h1>
+                        <p>Platform terintegrasi untuk pengolahan General Ledger, kalkulasi harga pokok penjualan, dan pelaporan akurat.</p>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with col_right:
+            st.markdown("""
+                <div class="orb-1"></div>
+                <div class="orb-2"></div>
+                <div class="orb-3"></div>
+                <div class="login-wrapper">
+                    <div class="glass-card-top">
+                        <div class="lock-badge">🔒</div>
+                        <h2>Akses Terbatas - Aplikasi HPP</h2>
+                        <p>Silakan masukkan kata sandi untuk mengakses<br>sistem laporan HPP</p>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+            with st.form("login_form"):
+                pwd = st.text_input("Masukkan Password Aplikasi:", type="password", placeholder="••••••••")
+                submitted = st.form_submit_button("Masuk")
+                if submitted:
+                    if "APP_PASSWORD" in st.secrets and pwd == st.secrets["APP_PASSWORD"]:
+                        st.session_state["password_correct"] = True
+                        st.rerun()
+                    else:
+                        st.error("❌ Password salah atau belum diatur di Streamlit Secrets.")
         st.stop()
 
 check_password()
 # --------------------------------
 
-st.title("📊 Otomatisasi HPP, Checking GL vs TB & Pivot Otomatis")
-st.markdown("Unggah **Master HPP (s.d. Bulan Sebelumnya)**, **File Klasifikasi**, **Trial Balance (TB) Bulan Berjalan**, dan **File-file GL** untuk memproses laporan secara otomatis.")
+def apply_dashboard_styles():
+    st.markdown("""
+        <style>
+        header, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] {
+            display: none !important;
+        }
+        [data-testid="stAppViewContainer"] {
+            background: radial-gradient(circle at 12% 10%, rgba(160, 198, 255, 0.35) 0%, transparent 32%),
+                        radial-gradient(circle at 88% 85%, rgba(135, 180, 255, 0.32) 0%, transparent 35%),
+                        linear-gradient(135deg, #eaf0fa 0%, #f5f8fe 50%, #e6eefb 100%);
+            min-height: 100vh;
+        }
+        .block-container {
+            padding: 2rem 3rem 4rem 3rem !important;
+            max-width: 1240px !important;
+        }
+        .dash-hero {
+            background: linear-gradient(125deg, #0b3c91 0%, #1d63dc 65%, #3882f6 100%);
+            border-radius: 22px;
+            padding: 1.8rem 2.2rem;
+            color: white;
+            box-shadow: 0 16px 36px rgba(13, 62, 152, 0.22);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            margin-bottom: 1.5rem;
+        }
+        .dash-hero h1 {
+            font-size: 1.85rem;
+            font-weight: 700;
+            margin: 0 0 0.4rem 0;
+            color: #ffffff;
+        }
+        .dash-hero p {
+            font-size: 0.96rem;
+            margin: 0;
+            color: rgba(255, 255, 255, 0.9);
+        }
+        [data-testid="stFileUploader"] {
+            background: rgba(255, 255, 255, 0.65) !important;
+            backdrop-filter: blur(16px) !important;
+            -webkit-backdrop-filter: blur(16px) !important;
+            border: 1px solid rgba(255, 255, 255, 0.92) !important;
+            border-radius: 18px !important;
+            padding: 1rem 1.2rem !important;
+            box-shadow: 0 10px 26px rgba(20, 55, 120, 0.06) !important;
+            margin-bottom: 0.85rem !important;
+        }
+        [data-testid="stFileUploader"] section {
+            background: rgba(240, 246, 255, 0.75) !important;
+            border: 1.5px dashed #7aa7f7 !important;
+            border-radius: 12px !important;
+        }
+        .stButton > button, .stDownloadButton > button {
+            border-radius: 999px !important;
+            font-weight: 600 !important;
+            padding: 0.65rem 1.6rem !important;
+            box-shadow: 0 8px 20px rgba(25, 92, 215, 0.25) !important;
+            transition: all 0.2s ease !important;
+        }
+        .stButton > button[kind="primary"], .stDownloadButton > button {
+            background: linear-gradient(90deg, #1252c4 0%, #256ef1 100%) !important;
+            color: #ffffff !important;
+            border: none !important;
+        }
+        .stButton > button:hover, .stDownloadButton > button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(25, 92, 215, 0.38) !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
+apply_dashboard_styles()
+
+col_head, col_out = st.columns([5.5, 1])
+with col_head:
+    st.markdown("""
+        <div class="dash-hero">
+            <h1>📊 Otomatisasi HPP, Checking GL vs TB & Pivot Otomatis</h1>
+            <p>Unggah <b>Master HPP (s.d. Bulan Sebelumnya)</b>, <b>File Klasifikasi</b>, <b>Trial Balance (TB) Bulan Berjalan</b>, dan <b>File-file GL</b> untuk memproses laporan secara otomatis.</p>
+        </div>
+    """, unsafe_allow_html=True)
+with col_out:
+    st.write("")
+    st.write("")
+    if st.button("🚪 Keluar", use_container_width=True):
+        st.session_state["password_correct"] = False
+        st.rerun()
 ACC_FORMAT = '_(* #,##0.00_);_(* (#,##0.00);_(* "-"??_);_(@_)'
 ILLEGAL_CHARS_RE = re.compile(r'[\000-\010]|[\013-\014]|[\016-\037]')
 
@@ -61,6 +356,7 @@ def split_account_code_desc(acc_str):
 def extract_account_code(acc_str):
     code, _ = split_account_code_desc(acc_str)
     return code
+
 def parse_pct_value(val):
     """Mengonversi nilai persentase (angka maupun teks '25%') menjadi desimal murni 0.25"""
     if pd.isna(val) or val is None:
@@ -112,7 +408,6 @@ def load_klasifikasi(file):
                 acc_map[acc_code] = k_lk
                 
     return proj_map, pct_map, acc_map, df_raw
-
 def parse_gl_files(gl_files):
     """Membaca banyak file GL, membuang baris summary akun/total, dan memisahkan kode & deskripsi akun"""
     all_tx = []
@@ -164,6 +459,7 @@ def parse_gl_files(gl_files):
         df_gl_sum = df_gl_sum.groupby(['Account_Code', 'GL_Account_Desc'], as_index=False).sum()
         
     return df_gl_all, df_gl_sum
+
 def parse_tb_file(tb_file):
     """Membaca Kolom A dari file TB yang diawali 5 digit kode akun dan mengambil Debit & Credit Bulan Berjalan"""
     df_raw = pd.read_excel(tb_file, header=None)
@@ -214,7 +510,6 @@ def parse_tb_file(tb_file):
         })
         
     return pd.DataFrame(tb_records)
-
 col1, col2 = st.columns(2)
 with col1:
     master_file = st.file_uploader("1️⃣ Upload File Master HPP (s.d. September)", type=["xlsx", "xlsm"])
@@ -290,7 +585,7 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             wb = openpyxl.load_workbook(BytesIO(master_bytes))
             
             # Cari sheet utama 'persediaan&HPP' secara akurat
-            main_sheet_name = wb.sheetnames[0]
+            main_sheet_name = wb.sheetnames
             for sname in wb.sheetnames:
                 if 'persediaan' in sname.lower() or 'hpp' in sname.lower():
                     main_sheet_name = sname
@@ -361,7 +656,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
             c_sisa26 = get_column_letter(col_idx_map.get('Sisa Persediaan 2026', 24))
             c_klk = get_column_letter(col_idx_map.get('Klasifikasi LK', 26))
             c_kpn = get_column_letter(col_idx_map.get('Klasifikasi Project New', 28))
-            
             current_row = last_row + 1
             current_no = last_no_urut + 1
             new_rows_for_pivot = []
@@ -434,7 +728,6 @@ if master_file and klasifikasi_file and tb_file and gl_files:
                 current_no += 1
                 
             final_data_row = current_row - 1
-            # Pastikan seluruh Kolom V (index 22 / Percentage 2026) berformat % dari baris 2 hingga baris paling bawah
             for r in range(2, final_data_row + 1):
                 c_v = ws_main.cell(row=r, column=22)
                 if c_v.value is not None:
