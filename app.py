@@ -316,7 +316,7 @@ col_head, col_out = st.columns([5.5, 1])
 with col_head:
     st.markdown("""
         <div class="dash-hero">
-            <h1>📊 Otomatisasi HPP, Checking GL vs TB & Pivot Otomatis</h1>
+            <h1>📊 Otomatisasi HPP, Checking GL vs TB & Pivot</h1>
             <p>Unggah <b>Master HPP (s.d. Bulan Sebelumnya)</b>, <b>File Klasifikasi</b>, <b>Trial Balance (TB) Bulan Berjalan</b>, dan <b>File-file GL</b> untuk memproses laporan secara otomatis.</p>
         </div>
     """, unsafe_allow_html=True)
