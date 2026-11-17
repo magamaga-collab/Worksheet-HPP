@@ -206,7 +206,7 @@ def check_password():
                         <rect x="508" y="685" width="16" height="138" rx="3" fill="rgba(255,255,255,0.75)"/>
                     </svg>
                     <div class="left-hero-content">
-                        <h1>Sistem Otomatisasi HPP & Laporan Keuangan</h1>
+                        <h1>Sistem Otomatisasi HPP & Persediaan</h1>
                         <p>Platform terintegrasi untuk pengolahan General Ledger, kalkulasi harga pokok penjualan, dan pelaporan akurat.</p>
                     </div>
                 </div>
